@@ -72,7 +72,13 @@ class EscapingFormatter(logging.Formatter):
         separator lines stay real lines (each escaped), while the exception text with its
         notes is escaped as one unit, so a newline in a message or note shows as \\x0a and
         cannot start a forged log line. Same output on Python 3.9 to 3.13."""
-        return "\n".join(_exc_lines(ei[1] if ei[1] is not None else ei[0]()))
+        etype, exc = ei[0], ei[1]
+        if exc is None:  # never instantiate the type: its __init__ may need arguments
+            return escape(getattr(etype, "__name__", "Exception"))
+        try:
+            return "\n".join(_exc_lines(exc))
+        except (Exception, RecursionError):  # noqa: BLE001 - logging must never raise
+            return escape(f"{type(exc).__name__}: <traceback unavailable>")
 
     def formatStack(self, stack_info):
         return "\n".join(escape(ln) for ln in stack_info.split("\n"))
@@ -80,6 +86,16 @@ class EscapingFormatter(logging.Formatter):
 
 _CAUSE = "The above exception was the direct cause of the following exception:"
 _CONTEXT = "During handling of the above exception, another exception occurred:"
+
+
+MAX_EXC_DEPTH = 50  # chained exceptions and nested ExceptionGroup levels shown
+
+
+def _safe_str(x, fallback):
+    try:
+        return str(x)
+    except Exception:  # noqa: BLE001 - a broken __str__ must not break logging
+        return fallback
 
 
 def _exc_text(exc):
@@ -90,43 +106,83 @@ def _exc_text(exc):
         if t.__module__ == "builtins"
         else f"{t.__module__}.{t.__qualname__}"
     )
-    try:
-        msg = str(exc)
-    except Exception:  # noqa: BLE001 - a broken __str__ must not break logging
-        msg = "<exception str() failed>"
+    msg = _safe_str(exc, "<exception str() failed>")
     text = (
         f"{name}: {msg}" if msg else name
     )  # ExceptionGroup str() has "(N sub-exceptions)"
     notes = getattr(exc, "__notes__", None)
     if isinstance(notes, (list, tuple)):
-        text = "\n".join([text] + [str(n) for n in notes])
+        text = "\n".join([text] + [_safe_str(n, "<note str() failed>") for n in notes])
     return escape(text)
 
 
-def _exc_lines(exc, seen=None):
-    """Traceback lines for exc and its chain, oldest first, like the standard format."""
-    seen = set() if seen is None else seen
-    seen.add(id(exc))
-    out = []
-    cause, context = exc.__cause__, exc.__context__
-    if cause is not None and id(cause) not in seen:
-        out += _exc_lines(cause, seen) + ["", _CAUSE, ""]
-    elif (
-        context is not None and not exc.__suppress_context__ and id(context) not in seen
-    ):
-        out += _exc_lines(context, seen) + ["", _CONTEXT, ""]
-    if exc.__traceback__ is not None:
-        out.append("Traceback (most recent call last):")
-        for frame in traceback.format_tb(exc.__traceback__):
-            out += [escape(ln) for ln in frame.rstrip("\n").split("\n")]
-    out.append(_exc_text(exc))
-    eg = getattr(builtins, "BaseExceptionGroup", None)
-    if eg is not None and isinstance(exc, eg):
-        n = len(exc.exceptions)
-        for i, sub in enumerate(exc.exceptions, 1):
-            out.append(f"+---------------- sub-exception {i} of {n} ----------------")
-            out += ["| " + ln for ln in _exc_lines(sub, seen)]
-        out.append("+------------------------------------------------------")
+def _next_in_chain(exc):
+    """(older exception, separator) or (None, None), like the standard traceback."""
+    if exc.__cause__ is not None:
+        return exc.__cause__, _CAUSE
+    if exc.__context__ is not None and not exc.__suppress_context__:
+        return exc.__context__, _CONTEXT
+    return None, None
+
+
+def _exc_lines(root):
+    """Traceback lines for root, its chain (oldest first) and ExceptionGroup members.
+    Iterative with an explicit stack, so no exception shape can hit the recursion limit;
+    chains and group nesting are cut at MAX_EXC_DEPTH with a "... more" line."""
+    group_type = getattr(builtins, "BaseExceptionGroup", None)
+    seen: set = set()
+    out: list = []
+    # Work items: ("line", text, prefix, depth) or ("exc", exception, prefix, depth).
+    stack: list = [("exc", root, "", 0)]
+    while stack:
+        kind, item, prefix, depth = stack.pop()
+        if kind == "line":
+            out.append(prefix + item)
+            continue
+        chain: list = []
+        seps: list = []
+        exc = item
+        while exc is not None and id(exc) not in seen and len(chain) < MAX_EXC_DEPTH:
+            seen.add(id(exc))
+            chain.append(exc)
+            exc, sep = _next_in_chain(exc)
+            seps.append(sep)
+        more = 0
+        while exc is not None and id(exc) not in seen:  # count only, never render
+            seen.add(id(exc))
+            more += 1
+            exc, _ = _next_in_chain(exc)
+        seq: list = []
+        if more:
+            seq += [("line", f"... ({more} more chained exceptions)", prefix, depth)]
+            seq += [("line", "", prefix, depth)]
+        for k in range(len(chain) - 1, -1, -1):  # oldest first
+            e = chain[k]
+            if e.__traceback__ is not None:
+                seq.append(
+                    ("line", "Traceback (most recent call last):", prefix, depth)
+                )
+                for frame in traceback.format_tb(e.__traceback__):
+                    seq += [
+                        ("line", escape(ln), prefix, depth)
+                        for ln in frame.rstrip("\n").split("\n")
+                    ]
+            seq.append(("line", _exc_text(e), prefix, depth))
+            if group_type is not None and isinstance(e, group_type):
+                subs = list(e.exceptions)
+                if depth + 1 >= MAX_EXC_DEPTH:
+                    msg = f"... ({len(subs)} sub-exceptions not shown: nested too deep)"
+                    seq.append(("line", msg, prefix, depth))
+                else:
+                    for n, sub in enumerate(subs, 1):
+                        head = f"+---------------- sub-exception {n} of {len(subs)} ----------------"
+                        seq.append(("line", head, prefix, depth))
+                        seq.append(("exc", sub, prefix + "| ", depth + 1))
+                    seq.append(("line", "+" + "-" * 54, prefix, depth))
+            if k > 0:  # separator between this exception and the newer one
+                sep = seps[k - 1]
+                seq += [("line", t, prefix, depth) for t in ("", sep, "")]
+        stack.extend(reversed(seq))
     return out
 
 
