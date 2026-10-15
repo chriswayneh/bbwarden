@@ -43,14 +43,16 @@ All notable changes to bbwarden are listed here. The format follows
   folder is now refused before any output (exit 1). The rename creates a new file, so the
   old file's owner, ACLs and extended attributes are not kept and hard links to it keep the
   old content; only the permission bits are copied.
+- New exit code 3: the command finished but part of the inventory could not be loaded
+  (`NOTE:` lines plus an `INCOMPLETE:` line on stderr). Previously this exited 0.
 
 ### Security
 - The temporary CSV file is owner-only (0o600) while the access inventory is written and
   gets its final mode (the old file's, or 0o666 minus the umask for a new file) just
   before the rename, so other local users cannot read a private report mid-rewrite. The
   umask is read from an empty probe file, never changed.
-- New exit code 3: the command finished but part of the inventory could not be loaded
-  (`NOTE:` lines plus an `INCOMPLETE:` line on stderr). Previously this exited 0.
+- Known limit: the target path is resolved once; an attacker who can write to a folder on
+  that path can redirect the write between resolve and rename.
 
 ## [0.2.3] - 2026-10-15
 

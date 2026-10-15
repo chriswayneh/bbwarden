@@ -61,7 +61,9 @@ version, and the CHANGELOG Security section describes them.
   invisible characters, and escapes control and format characters like terminal output
   (since 0.2.2). `--raw-csv` keeps them, with a warning; formulas are still neutralized and lone
   surrogates become U+FFFD. CSV files are written atomically and an existing file is never
-  removed or truncated by the writability check (since 0.2.4).
+  removed or truncated by the writability check (since 0.2.4). Note: the target path is
+  resolved once; an attacker who can write to a folder on that path can redirect the write
+  between resolve and rename. Write reports to folders only you control.
 - **No raw tracebacks (since 0.2.2).** An unexpected error prints a traceback with exception
   types only (no messages, notes or arguments that could carry secrets) and exits 1; log
   tracebacks are rendered the same way. Ctrl-C prints `interrupted` and exits 130, also
