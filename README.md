@@ -217,7 +217,9 @@ DRY RUN: re-run with --apply to make these changes
 
 ```
 pip install -e ".[dev]"
+ruff format --check .
 ruff check .
+mypy src
 pytest -q
 ```
 

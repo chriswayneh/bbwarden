@@ -2,6 +2,7 @@
 
 import csv
 import logging
+from typing import Any
 
 from .http import ManualStep
 from .model import RANK, rank
@@ -111,7 +112,7 @@ def who(ws, target):
             slugs = []
     if not slugs:
         raise KeyError(f"unknown repo or project: {target}")
-    best = {}
+    best: dict[tuple[str, str], dict[str, Any]] = {}
     for s in slugs:
         for u, p, src in _grants(ws, s):
             key = (s, u)
@@ -200,7 +201,7 @@ def load_idp_csv(path):
 def orphans(ws, status):
     rows = []
     for s in sorted(ws.repos):
-        seen = {}
+        seen: dict[str, list[Any]] = {}
         for u, p, src in _grants(ws, s):
             name = ws.users.get(u, {}).get("name")
             st = status[u] if u in status else status.get(name)
@@ -221,7 +222,7 @@ def orphans(ws, status):
 
 
 def _effective(ws, slug):
-    out = {}
+    out: dict[str, int] = {}
     for u, p, _ in _grants(ws, slug):
         out[u] = max(out.get(u, 0), rank(p))
     return out
@@ -291,7 +292,7 @@ def regroup(ws, slug):
 
 def _run_steps(steps):
     """Run (label, fn) pairs in order. On failure raise PartialApply listing finished labels."""
-    done = []
+    done: list[str] = []
     for i, (label, fn) in enumerate(steps):
         try:
             fn()

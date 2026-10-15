@@ -10,6 +10,8 @@ All notable changes to bbwarden are listed here. The format follows
 - `--insecure` flag to allow `http://` for `BBWARDEN_URL` and `CROWD_URL` (local test servers),
   with a warning on stderr.
 - `CROWD_APP_PASSWORD`, matching crowdkeeper.
+- `mypy` (with `check_untyped_defs`), `ruff` and `types-requests` in the `dev` extra; code is
+  `ruff format`ted.
 - SECURITY.md: private contact while the repo is private, supported versions, security design notes.
 
 ### Changed
