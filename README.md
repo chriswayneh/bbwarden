@@ -14,7 +14,7 @@ Built on [atlassian-python-api](https://github.com/atlassian-api/atlassian-pytho
 git clone https://github.com/chriswayneh/bbwarden.git
 cd bbwarden
 pip install -e .
-bbwarden --version    # bbwarden 0.2.2
+bbwarden --version    # bbwarden 0.2.3
 bbwarden who api --demo
 ```
 

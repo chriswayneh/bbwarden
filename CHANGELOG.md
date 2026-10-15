@@ -4,7 +4,7 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.3] - 2026-10-15
 
 ### Fixed
 - IDN hosts (for example `BBWARDEN_URL=https://bücher.example` or
@@ -17,6 +17,9 @@ All notable changes to bbwarden are listed here. The format follows
   (both already required by requests) are now declared dependencies: bbwarden imports
   urllib3, and urllib3 uses idna to encode the labels; `hypothesis` is in the
   `dev` extra for a differential test against requests.
+
+### Added
+- Dependabot configuration: weekly pip and GitHub Actions updates, minor and patch grouped.
 
 ## [0.2.2] - 2026-10-15
 
