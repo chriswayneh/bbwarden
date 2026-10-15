@@ -29,7 +29,8 @@ version, and the CHANGELOG Security section describes them.
 - **https only (since 0.2.1).** `BBWARDEN_URL` and `CROWD_URL` must use `https://`. Plain `http://` is
   refused for every host, loopback included, unless you pass `--insecure`, which allows it
   and prints a warning on stderr. Use it only for a local test server. A URL without a
-  hostname (for example `https://` or `https:x`) is always refused.
+  hostname (for example `https://` or `https:x`) is always refused. So is a URL with embedded
+  credentials (`https://user:pass@host`); the error does not repeat them.
 - **No redirects (since 0.2.1).** Every request is sent with redirects disabled, and the
   sessions allow zero redirects. A 3xx response, whether requests or bbwarden sees it, is an
   error (`redirect refused: <status> to <host>`) that names only the status and the target
@@ -38,8 +39,9 @@ version, and the CHANGELOG Security section describes them.
   exactly `bitbucket.org` or `api.bitbucket.org`. Pagination links must match the base URL
   scheme, host and port, so credentials never follow a link to another origin.
 - **No secrets in output.** Credentials come only from environment variables, never from
-  command-line arguments. Error messages name missing variables but never print their values,
-  and they drop URL query strings and response bodies.
+  command-line arguments or the URL. URLs in messages are reduced to scheme, host, port and
+  path (userinfo, query and fragment dropped). Error messages name missing variables but
+  never print their values, and they leave out response bodies.
 - **Dry run by default.** `regroup` and `offboard` only print a plan unless you pass `--apply`.
   `regroup` never picks a group whose grant would widen anyone's access. On failure, `--apply`
   reports exactly which steps finished, failed and were not run.

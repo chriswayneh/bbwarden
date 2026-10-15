@@ -48,8 +48,18 @@ def _retry_after(resp):
 
 
 def _safe_url(url):
-    """Drop query string, which could carry tokens."""
-    return url.split("?", 1)[0]
+    """URL for messages: scheme, host, port and path only. Userinfo, query and fragment can
+    carry credentials or tokens, so they are dropped. IPv6 hosts keep their brackets."""
+    try:
+        u = urlsplit(url)
+        host = u.hostname or ""
+        port = u.port
+    except ValueError:
+        return "<invalid URL>"
+    if ":" in host:
+        host = f"[{host}]"
+    netloc = f"{host}:{port}" if port is not None else host
+    return f"{u.scheme}://{netloc}{u.path}" if u.scheme else f"{netloc}{u.path}"
 
 
 IDEMPOTENT = ("GET", "HEAD", "OPTIONS", "PUT", "DELETE")

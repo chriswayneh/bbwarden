@@ -48,8 +48,20 @@ def _perm(table, raw):
 
 
 def require_https(name, url, insecure):
-    """https only. Plain http (any host, loopback included) needs --insecure and warns."""
-    u = urlsplit(url)
+    """https only, no credentials in the URL. Plain http (any host, loopback included) needs
+    --insecure and warns. Messages never echo the URL, so embedded secrets are not shown."""
+    try:
+        u = urlsplit(url)
+        u.hostname, u.port  # noqa: B018 - parse host and port now so bad values fail here
+    except ValueError:
+        raise ConfigError(f"{name} is not a valid URL") from None
+    if u.username or u.password or "@" in u.netloc:
+        hint = (
+            "BBWARDEN_USER and BBWARDEN_TOKEN"
+            if name == "BBWARDEN_URL"
+            else ("CROWD_APP and CROWD_APP_PASSWORD")
+        )
+        raise ConfigError(f"{name} must not contain credentials; use {hint} instead")
     scheme = u.scheme.lower()
     if scheme in ("http", "https") and not u.hostname:
         raise ConfigError(
