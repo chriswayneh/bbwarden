@@ -5,6 +5,7 @@ import time
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
 
+import idna
 import requests
 
 RETRY_STATUS = (429, 503)
@@ -68,17 +69,18 @@ IDEMPOTENT = ("GET", "HEAD", "OPTIONS", "PUT", "DELETE")
 
 
 def _idna_host(host):
-    """Hostname in ASCII (IDNA, lowercase), so https://bücher.example and the punycoded
-    https://xn--bcher-kva.example that requests reports compare equal. IPv6 literals pass
-    through lowercased. A name that cannot be IDNA-encoded (for example an empty or
-    over-long label) returns a fresh object() that equals nothing, so it is never treated
-    as the same origin."""
+    """Hostname in ASCII via IDNA2008/UTS46 (the idna package, same as requests), so
+    https://bücher.example and the punycoded https://xn--bcher-kva.example that requests
+    reports compare equal, while hosts that only IDNA2003 would merge (faß vs fass, ς vs σ)
+    stay different. IPv6 literals pass through lowercased. A name that cannot be encoded
+    (for example an empty or over-long label) returns a fresh object() that equals nothing,
+    so it is never treated as the same origin."""
     host = host.lower()
     if not host or ":" in host:
         return host
     try:
-        return host.encode("idna").decode("ascii").lower()
-    except UnicodeError:
+        return idna.encode(host, uts46=True).decode("ascii").lower()
+    except (idna.IDNAError, UnicodeError, ValueError):
         return object()
 
 

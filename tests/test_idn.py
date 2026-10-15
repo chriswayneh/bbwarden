@@ -77,3 +77,59 @@ def test_redirect_message_no_userinfo_query_fragment():
     assert "evil.example.net" in msg
     for bit in ("user", "pw0rd", "p4th", "S3CRETQ", "fr4g"):
         assert bit not in msg
+
+
+# IDNA2008/UTS46 (what requests uses) keeps sharp s and final sigma distinct; IDNA2003
+# maps them to "ss" and "σ", which would wrongly treat another host as the same origin.
+DEVIANT = [
+    ("https://fa\u00df.example", "https://fass.example"),
+    ("https://\u03c3.example", "https://\u03c2.example"),
+]
+BOTH_WAYS = DEVIANT + [(b, a) for a, b in DEVIANT]
+
+
+@pytest.mark.parametrize("base,other", BOTH_WAYS)
+def test_deviation_chars_url_refused(base, other):
+    import requests
+
+    for link in (
+        other + "/next",
+        requests.Request("GET", other + "/next").prepare().url,
+    ):
+        with pytest.raises(BBWardenError, match="another host"):
+            http(base, {}).url(link)
+
+
+@pytest.mark.parametrize("base,other", BOTH_WAYS)
+def test_deviation_chars_final_url_refused(base, other):
+    import requests
+
+    resp = Resp(200, body={})
+    resp.url = requests.Request("GET", other + "/rest/x").prepare().url
+    with pytest.raises(BBWardenError, match="redirect refused"):
+        http(base, {("GET", "/rest/x", None): resp}).get("rest/x")
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "b\u00fccher.example",
+        "fa\u00df.example",
+        "\u03c3.example",
+        "\u03c2.example",
+        "BB.Example.com",
+    ],
+)
+def test_origin_matches_requests_prepared_url(host):
+    import requests
+
+    prepared = requests.Request("GET", f"https://{host}/x").prepare().url
+    assert _origin(f"https://{host}/x") == _origin(prepared)
+    assert _origin(prepared)[1] == prepared.split("/")[2]
+
+
+def test_idna_is_direct_dependency():
+    from pathlib import Path
+
+    text = (Path(__file__).parent.parent / "pyproject.toml").read_text()
+    assert '"idna>=2.5,<4"' in text
