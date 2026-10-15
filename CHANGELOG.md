@@ -14,11 +14,11 @@ All notable changes to bbwarden are listed here. The format follows
 
 ### Changed
 - `http://` is refused for every host unless `--insecure` is given. This replaces the
-  automatic `localhost` and `127.0.0.1` exception.
+  automatic `localhost` and `127.0.0.1` exception. URLs without a hostname are refused.
 
 ### Deprecated
-- `CROWD_PASSWORD`: still accepted with a warning on stderr. `CROWD_APP_PASSWORD` wins when
-  both are set.
+- `CROWD_PASSWORD`: still accepted, with a deprecation warning on stderr when it is used. If
+  `CROWD_APP_PASSWORD` is also set, it wins and a note says `CROWD_PASSWORD` is ignored.
 
 ## [0.2.0] - 2026-10-15
 

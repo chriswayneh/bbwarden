@@ -63,7 +63,7 @@ def test_crowd_password_old_name_warns(capsys):
 
 def test_crowd_new_name_wins(capsys):
     assert live.crowd_creds(crowd_env(CROWD_PASSWORD="old", CROWD_APP_PASSWORD="new"))[2] == "new"
-    assert "deprecated" in capsys.readouterr().err
+    assert "ignored" in capsys.readouterr().err
 
 
 def test_crowd_missing_names_new_var():
@@ -76,3 +76,30 @@ def test_security_md():
     for needle in ("Reporting a vulnerability", "privately", "Supported versions", "0.2",
                    "https", "secrets", "dry run"):
         assert needle.lower() in s.lower(), needle
+
+
+# review on 1455b0c
+@pytest.mark.parametrize("url", ["https:x", "https://", "https:///path", "http://"])
+def test_url_without_hostname_refused(url):
+    with pytest.raises(BBWardenError, match="no hostname"):
+        live.creds_from_env({**BASE, "BBWARDEN_URL": url}, insecure=True)
+
+
+def test_crowd_url_without_hostname_refused():
+    with pytest.raises(BBWardenError, match="CROWD_URL has no hostname"):
+        live.crowd_from_env({**crowd_env(CROWD_APP_PASSWORD="p"), "CROWD_URL": "https://"},
+                            session_factory=lambda: None)
+
+
+def test_both_crowd_passwords_note_not_deprecation_warning(capsys):
+    live.crowd_creds(crowd_env(CROWD_PASSWORD="old", CROWD_APP_PASSWORD="new"))
+    err = capsys.readouterr().err
+    assert "deprecated" not in err
+    assert "NOTE: CROWD_PASSWORD is ignored because CROWD_APP_PASSWORD is set" in err
+
+
+def test_security_md_private_contact_and_no_sla():
+    s = (ROOT / "SECURITY.md").read_text()
+    assert "5 business days" not in s and "as soon as practical" in s
+    assert "@chriswayneh" in s and "when the repository goes public" in s
+    assert 'Security tab, "Report a vulnerability"), or' not in s

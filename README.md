@@ -76,7 +76,7 @@ Set credentials in the environment (never on the command line):
 | `BBWARDEN_USER` | Username (Cloud: account username or email; Data Center: user or service account) |
 | `BBWARDEN_TOKEN` | Cloud app password or API token; Data Center HTTP access token or password |
 | `BBWARDEN_WORKSPACE` | Cloud only: workspace slug |
-| `CROWD_URL`, `CROWD_APP`, `CROWD_APP_PASSWORD` | `--idp crowd` only: Crowd base URL and application credentials. The old name `CROWD_PASSWORD` still works but prints a deprecation warning; `CROWD_APP_PASSWORD` wins if both are set. |
+| `CROWD_URL`, `CROWD_APP`, `CROWD_APP_PASSWORD` | `--idp crowd` only: Crowd base URL and application credentials. The old name `CROWD_PASSWORD` still works and prints a deprecation warning when it is used. If both are set, `CROWD_APP_PASSWORD` is used and a note says `CROWD_PASSWORD` is ignored. |
 
 Read commands need admin read on the projects and repos you scan (Data Center user
 status also needs system admin read). `--apply` needs admin write.
@@ -113,6 +113,7 @@ Hardening:
 - `BBWARDEN_URL` and `CROWD_URL` must be `https://` for every host, loopback included.
   `--insecure` allows `http://` for a local test server and prints a warning on stderr.
   There is no automatic localhost exception, so plain http is always an explicit choice.
+  A URL without a hostname (`https://`, `https:x`) is refused.
 - Pagination links must match the base URL scheme, host and port.
 - Rate-limit retries apply only to idempotent methods (GET, PUT, DELETE). A POST that gets
   429 or 503 is not retried; check the state and re-run.

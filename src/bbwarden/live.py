@@ -32,7 +32,10 @@ def _perm(table, raw):
 
 def require_https(name, url, insecure):
     """https only. Plain http (any host, loopback included) needs --insecure and warns."""
-    scheme = urlsplit(url).scheme.lower()
+    u = urlsplit(url)
+    scheme = u.scheme.lower()
+    if scheme in ("http", "https") and not u.hostname:
+        raise BBWardenError(f"{name} has no hostname: use a full URL such as https://bitbucket.example.com")
     if scheme == "https":
         return
     if scheme == "http" and insecure:
@@ -276,10 +279,13 @@ def crowd_creds(env=None):
     url, app = env.get("CROWD_URL"), env.get("CROWD_APP")
     pw = env.get("CROWD_APP_PASSWORD")
     if env.get("CROWD_PASSWORD"):
-        print("WARNING: CROWD_PASSWORD is deprecated; use CROWD_APP_PASSWORD"
-              + (" (ignoring CROWD_PASSWORD because CROWD_APP_PASSWORD is set)" if pw else ""),
-              file=sys.stderr)
-        pw = pw or env.get("CROWD_PASSWORD")
+        if pw:
+            print("NOTE: CROWD_PASSWORD is ignored because CROWD_APP_PASSWORD is set; "
+                  "you can unset CROWD_PASSWORD", file=sys.stderr)
+        else:
+            print("WARNING: CROWD_PASSWORD is deprecated; rename it to CROWD_APP_PASSWORD",
+                  file=sys.stderr)
+            pw = env["CROWD_PASSWORD"]
     if not (url and app and pw):
         raise AuthError("--idp crowd needs CROWD_URL, CROWD_APP and CROWD_APP_PASSWORD (Crowd "
                         "application credentials), or use --idp csv")

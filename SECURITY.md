@@ -5,15 +5,15 @@
 Please report vulnerabilities privately. Do not open a public issue, pull request or
 discussion for a suspected vulnerability.
 
-- Use GitHub private vulnerability reporting on this repository (Security tab, "Report a
-  vulnerability"), or contact the maintainer, Christopher Hickman (@chriswayneh), privately
-  on GitHub.
+- While this repository is private, contact the maintainer, Christopher Hickman
+  (@chriswayneh), privately on GitHub. GitHub private vulnerability reporting will be turned
+  on when the repository goes public; until then it is not available here.
 - Include the bbwarden version (`bbwarden --version`), the command you ran, what you expected
   and what happened. Redact tokens, passwords and internal hostnames.
 - If you think a credential was exposed, rotate it first. Deleting output or commits is not
   enough.
 
-You should get an acknowledgement within 5 business days. Fixes are released as a new patch
+You will get an acknowledgement as soon as practical. Fixes are released as a new patch
 version, and the CHANGELOG Security section describes them.
 
 ## Supported versions
@@ -26,8 +26,9 @@ version, and the CHANGELOG Security section describes them.
 ## Security design notes
 
 - **https only.** `BBWARDEN_URL` and `CROWD_URL` must use `https://`. Plain `http://` is
-  refused for every host, loopback included, unless you pass `--insecure`, which prints a
-  warning on stderr. Use it only for a local test server.
+  refused for every host, loopback included, unless you pass `--insecure`, which allows it
+  and prints a warning on stderr. Use it only for a local test server. A URL without a
+  hostname (for example `https://` or `https:x`) is always refused.
 - **Exact Cloud detection.** Credentials go to Bitbucket Cloud only when the hostname is
   exactly `bitbucket.org` or `api.bitbucket.org`. Pagination links must match the base URL
   scheme, host and port, so credentials never follow a link to another origin.
