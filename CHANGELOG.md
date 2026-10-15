@@ -1,0 +1,47 @@
+# Changelog
+
+All notable changes to bbwarden are listed here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
+[Semantic Versioning](https://semver.org/).
+
+## [0.2.0] - Unreleased
+
+### Added
+- Live Bitbucket Cloud and Data Center backends built on atlassian-python-api sessions.
+- Live `--idp crowd` lookup, and live `regroup --apply` and `offboard --apply`.
+- Pagination for every list call (Data Center `nextPageStart`, Cloud `next`).
+- Retries for HTTP 429 and 503 on idempotent methods, with exponential backoff and jitter,
+  honoring `Retry-After`.
+- `--version` flag.
+- `offboard --skip-memberships` to remove only direct grants.
+- `offboard` loads every group the user belongs to, not only groups that hold a grant.
+- When `--apply` fails partway, bbwarden prints and logs the steps that finished, the step
+  that failed, and the steps not run.
+- Tests on mocked HTTP for pagination, retries, auth errors, and both live backends.
+
+### Changed
+- Bitbucket Cloud users are keyed by `account_id` and shown as `nickname (account_id)`.
+- Account status is `UNKNOWN` when Bitbucket does not report it, instead of active.
+- `regroup` plan rows show the display label.
+- The version is read from `bbwarden.__version__`.
+
+### Fixed
+- `regroup --apply` could give repo access to group members who had none. It now only picks
+  a group whose members all already have at least that access; otherwise the step is manual.
+- A grant with an unknown permission name is marked manual instead of being sent back as is.
+- Ambiguous or unknown users are refused by `offboard` instead of guessed.
+- Cloud group listings without a member list now stop the run instead of reading as empty.
+
+### Security
+- Cloud is detected only for the exact hosts `bitbucket.org` and `api.bitbucket.org`, so a
+  Data Center token is never sent to Bitbucket Cloud by mistake.
+- Pagination links must match the base URL scheme, host and port.
+- `BBWARDEN_URL` must be `https://`; plain `http://` only for `localhost` and `127.0.0.1`.
+- 401 and 403 errors name the fix and never print credentials or URL query strings.
+- Non-JSON responses and network errors report no response body or request details.
+
+## [0.1.0] - 2026-10-14
+
+### Added
+- First release: `who`, `direct`, `orphans`, `regroup` and `offboard` with `--demo` and
+  `--csv`, a built-in demo workspace, pytest tests and a README.

@@ -11,6 +11,10 @@ class AmbiguousUser(KeyError):
     pass
 
 
+class UnknownUser(KeyError):
+    pass
+
+
 def label(ws, u):
     """Display name: 'nickname (account_id)' when the key is an opaque id, else the key."""
     name = ws.users.get(u, {}).get("name")
@@ -24,7 +28,10 @@ def resolve_user(ws, name):
     hits = sorted(k for k, v in ws.users.items() if v.get("name") == name)
     if len(hits) > 1:
         raise AmbiguousUser(f"ambiguous user {name}: {', '.join(hits)} (pass one account_id)")
-    return hits[0] if hits else name
+    if not hits:
+        raise UnknownUser(f"unknown user {name}: no grant or group membership found "
+                          "(Cloud: pass an account_id or nickname shown by bbwarden)")
+    return hits[0]
 
 
 class PartialApply(Exception):
@@ -146,21 +153,21 @@ def regroup(ws, slug):
     plan = []
     for u, p in sorted(repo["users"].items()):
         if p not in RANK:
-            plan.append({"repo": slug, "user": u, "action": "manual", "group": "",
+            plan.append({"repo": slug, "user": label(ws, u), "key": u, "action": "manual", "group": "",
                          "detail": f"unknown permission {p}; review by hand"})
             continue
         mine = sorted(g for g, m in ws.groups.items() if u in m)
         groups = [g for g in mine if all(eff.get(m, 0) >= rank(p) for m in ws.groups[g])]
         if mine and not groups:
-            plan.append({"repo": slug, "user": u, "action": "manual", "group": "",
-                         "detail": f"every group of {u} ({', '.join(mine)}) would widen access; "
+            plan.append({"repo": slug, "user": label(ws, u), "key": u, "action": "manual", "group": "",
+                         "detail": f"every group of {label(ws, u)} ({', '.join(mine)}) would widen access; "
                                    f"create a narrower group or keep direct {p}"})
         elif groups:
-            plan.append({"repo": slug, "user": u, "action": "replace", "group": groups[0],
+            plan.append({"repo": slug, "user": label(ws, u), "key": u, "action": "replace", "group": groups[0],
                          "detail": f"grant group {groups[0]} {p}; remove direct {p}"})
         else:
-            plan.append({"repo": slug, "user": u, "action": "manual", "group": "",
-                         "detail": f"no group contains {u}; create one or keep direct {p}"})
+            plan.append({"repo": slug, "user": label(ws, u), "key": u, "action": "manual", "group": "",
+                         "detail": f"no group contains {label(ws, u)}; create one or keep direct {p}"})
     return plan
 
 
@@ -186,7 +193,7 @@ def apply_regroup(ws, plan, backend=None):
     for step in plan:
         if step["action"] != "replace":
             continue
-        key, u, g = step["repo"], step["user"], step["group"]
+        key, u, g = step["repo"], step["key"], step["group"]
         repo = ws.repos[key]
         perm = repo["users"][u]
 
@@ -202,7 +209,7 @@ def apply_regroup(ws, plan, backend=None):
             del repo["users"][u]
 
         steps += [(f"grant group {g} {perm} on repo {key}", grant),
-                  (f"remove direct {u} from repo {key}", remove)]
+                  (f"remove direct {step['user']} from repo {key}", remove)]
     return _run_steps(steps)
 
 
@@ -236,5 +243,5 @@ def apply_offboard(ws, user, plan, backend=None):
         else:
             ws.groups[step["name"]].remove(user)
 
-    return _run_steps([(f"{s['action']} {user}: {s['scope']} {s['name']}", lambda s=s: do(s))
+    return _run_steps([(f"{s['action']} {label(ws, user)}: {s['scope']} {s['name']}", lambda s=s: do(s))
                        for s in plan])

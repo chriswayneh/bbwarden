@@ -138,7 +138,10 @@ class CloudBackend:
     def load_memberships(self, ws, user):
         """Load every workspace group (legacy 1.0 API) so offboard sees all memberships."""
         for g in self.h.get(f"1.0/groups/{self.w}"):
-            ws.groups[g["slug"]] = [self._user(m) for m in g.get("members", [])]
+            if not isinstance(g.get("members"), list):
+                raise BBWardenError(f"Bitbucket returned no member list for group {g.get('slug')}; "
+                                    "refusing to offboard on incomplete data")
+            ws.groups[g["slug"]] = [self._user(m) for m in g["members"]]
         for k, n in self.names.items():
             ws.users.setdefault(k, {"active": None})["name"] = n
 
@@ -171,7 +174,8 @@ def _fill(ws, members, statuses):
 
 
 def crowd_status(http, users):
-    """Look up active flag per user in Crowd. Unknown users are treated as disabled."""
+    """Look up active flag per username in Crowd. A 404 (unknown user) counts as disabled;
+    any other error is raised."""
     out = {}
     for u in users:
         try:

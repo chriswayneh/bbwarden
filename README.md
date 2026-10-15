@@ -11,7 +11,7 @@ commands are dry-run plans unless you pass `--apply`.
 
 ```
 pip install -e .
-bbwarden --version
+bbwarden --version    # bbwarden 0.2.0
 ```
 
 ## Quick start (no Bitbucket needed)
@@ -92,7 +92,13 @@ Hardening:
   On Data Center, membership removal fails for groups from a read-only Crowd or LDAP
   directory; remove those in the directory itself and use `offboard --skip-memberships` to
   remove only direct grants.
-- `--idp crowd` treats a user Crowd does not know (404) as disabled.
+- In `orphans`, IdP status is matched by user key first, then by display name. On Data Center the
+  key is the username. On Cloud the key is the `account_id` and the display name is the
+  nickname, so a `--idp-file` row may use either; if both appear, the account_id row wins.
+  A nickname shared by several Cloud accounts applies to all of them, so prefer account_ids.
+- `--idp crowd` looks each user up by username (Cloud: by nickname, since Crowd does not know
+  account_ids). A user Crowd does not know (404) counts as disabled; any other Crowd error
+  stops the run.
 
 `--idp csv` reads `--idp-file` with columns `user,active` (`true/false`, `1/0`, `yes/no`).
 

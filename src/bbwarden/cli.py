@@ -108,10 +108,9 @@ def _run(args, env, **kw):
             else:
                 note = "DRY RUN: re-run with --apply to make these changes"
         elif args.cmd == "offboard":
-            user = core.resolve_user(ws, args.user)
             if backend and not args.skip_memberships:
-                backend.load_memberships(ws, user)
-                user = core.resolve_user(ws, args.user)
+                backend.load_memberships(ws, args.user)
+            user = core.resolve_user(ws, args.user)
             rows = core.offboard(ws, user, memberships=not args.skip_memberships)
             if args.apply:
                 core.apply_offboard(ws, user, rows, backend)

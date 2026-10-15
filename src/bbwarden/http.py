@@ -74,7 +74,7 @@ class Http:
                     and method.upper() in IDEMPOTENT):
                 delay = _retry_after(resp)
                 if delay is None:
-                    delay = self.base_delay * (2 ** attempt) + random.uniform(0, self.base_delay)
+                    delay = self.base_delay * (2 ** attempt) + random.uniform(0, self.base_delay)  # nosec B311 jitter for backoff timing, not security
                 self.sleep(min(delay, self.max_delay))
                 continue
             break
