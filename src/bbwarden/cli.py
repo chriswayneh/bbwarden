@@ -88,7 +88,9 @@ _CAUSE = "The above exception was the direct cause of the following exception:"
 _CONTEXT = "During handling of the above exception, another exception occurred:"
 
 
-MAX_EXC_DEPTH = 50  # chained exceptions and nested ExceptionGroup levels shown
+MAX_EXC_DEPTH = (
+    50  # chained exceptions, ExceptionGroup nesting levels and members shown
+)
 
 
 def _safe_str(x, fallback):
@@ -174,10 +176,15 @@ def _exc_lines(root):
                     msg = f"... ({len(subs)} sub-exceptions not shown: nested too deep)"
                     seq.append(("line", msg, prefix, depth))
                 else:
-                    for n, sub in enumerate(subs, 1):
+                    for n, sub in enumerate(subs[:MAX_EXC_DEPTH], 1):
                         head = f"+---------------- sub-exception {n} of {len(subs)} ----------------"
                         seq.append(("line", head, prefix, depth))
                         seq.append(("exc", sub, prefix + "| ", depth + 1))
+                    if len(subs) > MAX_EXC_DEPTH:
+                        rest = len(subs) - MAX_EXC_DEPTH
+                        seq.append(
+                            ("line", f"... ({rest} more sub-exceptions)", prefix, depth)
+                        )
                     seq.append(("line", "+" + "-" * 54, prefix, depth))
             if k > 0:  # separator between this exception and the newer one
                 sep = seps[k - 1]

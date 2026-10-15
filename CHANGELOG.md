@@ -15,8 +15,8 @@ All notable changes to bbwarden are listed here. The format follows
   U+2029), private-use and unassigned code points are escaped too, and a backslash is shown
   as `\\` so literal text cannot pass for an escape. Log messages are escaped with their
   arguments, and tracebacks line by line with each exception message and its notes
-  escaped as one unit (chained exceptions and ExceptionGroup included; chains and group
-  nesting are cut after 50 levels and rendering can never make a log call fail), so a
+  escaped as one unit (chained exceptions and ExceptionGroup included; chains, group
+  nesting and members per group are cut at 50 and rendering can never make a log call fail), so a
   newline in a name or error cannot forge a log line. argparse errors are escaped.
   Table columns are aligned by display width (wide characters 2; combining,
   nonspacing and enclosing marks, including variation selectors, 0).

@@ -106,3 +106,14 @@ def test_recursion_limit_safe(capsys):
 
 def test_cap_is_documented():
     assert 10 <= getattr(cli, "MAX_EXC_DEPTH", 0) <= 100
+
+
+@needs_311
+def test_wide_group_members_capped(capsys):
+    eg = builtins.ExceptionGroup
+    exc = eg(f"wide{FORGE}", [ValueError(f"m{i}{FORGE}") for i in range(5000)])
+    log_to_stderr((type(exc), exc, None))
+    err = capsys.readouterr().err
+    check(err, max_lines=500)
+    assert "sub-exception 50 of 5000" in err and "sub-exception 51 of" not in err
+    assert "... (4950 more sub-exceptions)" in err
