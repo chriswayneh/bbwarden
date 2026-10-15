@@ -5,8 +5,8 @@ import time
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
 
-import idna
 import requests
+from urllib3.util import parse_url
 
 RETRY_STATUS = (429, 503)
 
@@ -68,36 +68,31 @@ def _safe_url(url):
 IDEMPOTENT = ("GET", "HEAD", "OPTIONS", "PUT", "DELETE")
 
 
-def _idna_host(host):
-    """Hostname as requests sends it, for origin comparison.
-
-    Pure-ASCII hosts are compared case-insensitively, unchanged otherwise: requests sends
-    them as is, including names IDNA would reject (bitbucket_server, my_host.internal).
-    Punycode labels (xn--...) are ASCII too, so they are compared as written.
-
-    Non-ASCII hosts are encoded with IDNA2008/UTS46 (the idna package, as requests does),
-    so https://bücher.example matches the punycoded https://xn--bcher-kva.example that
-    requests reports, while hosts that only IDNA2003 would merge (faß vs fass, ς vs σ) stay
-    different. A non-ASCII name that cannot be encoded returns a fresh object() that equals
-    nothing, so it is never treated as the same origin. IPv6 literals are ASCII."""
-    host = host.lower()
-    if host.isascii():
-        return host
-    try:
-        return idna.encode(host, uts46=True).decode("ascii")
-    except (idna.IDNAError, UnicodeError, ValueError):
-        return object()
-
-
 def _origin(url):
-    """(scheme, IDNA hostname, port) with default ports filled in."""
-    u = urlsplit(url)
-    scheme = u.scheme.lower()
-    return (
-        scheme,
-        _idna_host(u.hostname or ""),
-        u.port or {"https": 443, "http": 80}.get(scheme),
-    )
+    """(scheme, host, port) exactly as requests will send it, default ports filled in.
+
+    The URL is prepared by requests itself (PreparedRequest.prepare_url) and the result
+    parsed with urllib3's parse_url, so the comparison uses the wire form: ASCII labels
+    are kept (bitbucket_server, my_host.internal), non-ASCII labels are IDNA2008-encoded
+    (büro.my_host.internal is sent as xn--bro-hoa.my_host.internal), and the host is
+    lowercased. Hosts that only IDNA2003 would merge (faß vs fass, ς vs σ) stay different.
+    A URL that requests refuses or that has no host gets a fresh object() as host, which
+    equals nothing, so it is never treated as the same origin."""
+    never = ("", object(), None)
+    try:
+        prepared = requests.models.PreparedRequest()
+        prepared.prepare_url(url, None)
+        u = parse_url(prepared.url or "")
+        host = (u.host or "").lower()
+        port = u.port
+    except (requests.RequestException, ValueError):  # InvalidURL, LocationParseError
+        return never
+    if not host:
+        return never
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]  # IPv6 literal, same form as urlsplit().hostname
+    scheme = (u.scheme or "").lower()
+    return (scheme, host, port or {"https": 443, "http": 80}.get(scheme))
 
 
 def _redirect_error(status, location, where):
