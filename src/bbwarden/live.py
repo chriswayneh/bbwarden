@@ -68,11 +68,14 @@ class DataCenter:
 
     def load_memberships(self, ws, user):
         """Add every group the user belongs to, not only groups that hold a grant."""
+        found = False
         for g in self.h.paginate("rest/api/1.0/admin/users/more-members", {"context": user}):
+            found = True
             members = ws.groups.setdefault(g["name"], [])
             if user not in members:
                 members.append(user)
-        ws.users.setdefault(user, {"active": None})
+        if found:   # only a real membership makes the user known; a typo stays unknown
+            ws.users.setdefault(user, {"active": None})
 
     def remove_user(self, ws, scope, key, user):
         p = "rest/api/1.0"

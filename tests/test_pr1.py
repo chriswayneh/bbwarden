@@ -90,3 +90,49 @@ def test_version_consistent():
 def test_jitter_has_nosec_reason():
     line = next(x for x in (ROOT / "src/bbwarden/http.py").read_text().splitlines() if "random.uniform" in x)
     assert re.search(r"# nosec B311 .*\w{4,}", line)
+
+
+# review on 7103107: hidden key column, DC typo raises UnknownUser
+def test_regroup_table_and_csv_hide_key(tmp_path, capsys):
+    from bbwarden.cli import main
+    out = tmp_path / "r.csv"
+    main(["regroup", "api", "--demo", "--csv", str(out)])
+    header = capsys.readouterr().out.splitlines()[0].split()
+    assert header == ["REPO", "USER", "ACTION", "GROUP", "DETAIL"]
+    assert out.read_text().splitlines()[0] == "repo,user,action,group,detail"
+    assert core.regroup(core_demo(), "api")[0]["key"] == "bob"
+
+
+def core_demo():
+    from bbwarden.model import demo_workspace
+    return demo_workspace()
+
+
+def test_readme_samples_match_real_output():
+    import subprocess
+    import sys
+    s = (ROOT / "README.md").read_text()
+    for cmd in ["who api", "direct", "orphans --idp crowd", "regroup api", "offboard dave"]:
+        out = subprocess.run([sys.executable, "-m", "bbwarden.cli", *cmd.split(), "--demo"],
+                             capture_output=True, text=True, check=True).stdout
+        assert f"$ bbwarden {cmd} --demo\n{out}```" in s, cmd
+
+
+def test_dc_typo_user_raises_unknown(monkeypatch):
+    from bbwarden.cli import main
+    from bbwarden.live import DataCenter
+    page = lambda v: Resp(body={"values": v, "isLastPage": True})
+    P = "/rest/api/1.0"
+    sess = FakeSession({
+        ("GET", f"{P}/projects", None): page([]),
+        ("GET", f"{P}/admin/users", None): page([]),
+        ("GET", f"{P}/admin/users/more-members", None): page([]),
+    })
+    be = DataCenter(Http(sess, "https://bb.example.com"))
+    ws = be.load()
+    be.load_memberships(ws, "zedd")
+    assert "zedd" not in ws.users
+    monkeypatch.setattr("bbwarden.cli.get_ws", lambda args, env=None, **kw: (ws, be))
+    with pytest.raises(SystemExit, match="unknown user zedd"):
+        main(["offboard", "zedd", "--apply"])
+    assert all(m == "GET" for m, *_ in sess.calls)

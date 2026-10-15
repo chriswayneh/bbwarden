@@ -8,11 +8,17 @@ from .http import BBWardenError
 from .live import backend_from_env, crowd_from_env, crowd_status
 from .model import demo_workspace
 
+HIDDEN = {"key"}   # internal fields kept on plan rows but never displayed or exported
+
+
+def columns(rows):
+    return [c for c in rows[0] if c not in HIDDEN]
+
 
 def table(rows):
     if not rows:
         return "(no results)"
-    cols = list(rows[0])
+    cols = columns(rows)
     w = {c: max(len(c), *(len(str(r[c])) for r in rows)) for c in cols}
     line = lambda r: "  ".join(str(r[c]).ljust(w[c]) for c in cols).rstrip()
     return "\n".join([line({c: c.upper() for c in cols}),
@@ -22,7 +28,7 @@ def table(rows):
 def write_csv(rows, path):
     with open(path, "w", newline="") as f:
         if rows:
-            wr = csv.DictWriter(f, fieldnames=list(rows[0]))
+            wr = csv.DictWriter(f, fieldnames=columns(rows), extrasaction="ignore")
             wr.writeheader()
             wr.writerows(rows)
 
