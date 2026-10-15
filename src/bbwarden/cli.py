@@ -266,11 +266,17 @@ def write_csv(rows, path, cols, raw=False):
     """UTF-8, always with the header row, even with no rows. See _safe_cell for raw.
     Written to a temporary sibling and renamed over the target, so a failed write
     never leaves a truncated file and never destroys the previous one. A symlink is
-    followed, so its target is updated and the link stays a link."""
+    followed, so its target is updated and the link stays a link. The temporary file is
+    owner-only (0o600) while rows are written and gets its final mode just before the
+    rename: the existing file's mode, or 0o666 minus the umask for a new file."""
     real = os.path.realpath(path)
     if os.path.isdir(real):
         raise IsADirectoryError(21, "Is a directory", path)
-    fd, tmp = _temp_sibling(real, path)
+    try:
+        mode = stat.S_IMODE(os.stat(real).st_mode)
+    except FileNotFoundError:
+        mode = _new_file_mode(real, path)
+    fd, tmp = _temp_sibling(real, path, 0o600)
     try:
         f = os.fdopen(fd, "w", newline="", encoding="utf-8")
     except BaseException:
@@ -282,10 +288,7 @@ def write_csv(rows, path, cols, raw=False):
             wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
             wr.writeheader()
             wr.writerows({c: _safe_cell(r.get(c, ""), raw) for c in cols} for r in rows)
-        try:  # an existing file keeps its mode; a new one keeps the umask-based mode
-            os.chmod(tmp, stat.S_IMODE(os.stat(real).st_mode))
-        except FileNotFoundError:
-            pass
+        os.chmod(tmp, mode)
         os.replace(tmp, real)
     except BaseException:
         _remove_quietly(tmp)
@@ -299,15 +302,26 @@ def _remove_quietly(p):
         pass
 
 
-def _temp_sibling(real, shown):
-    """A new file next to real, created with mode 0o666 so the process umask applies
-    (no umask call needed). Errors name the path the user gave, not the temp name."""
+def _new_file_mode(real, shown):
+    """0o666 minus the umask, read from an empty probe file instead of calling os.umask
+    (which changes process-wide state)."""
+    fd, probe = _temp_sibling(real, shown, 0o666)
+    try:
+        return stat.S_IMODE(os.fstat(fd).st_mode)
+    finally:
+        os.close(fd)
+        _remove_quietly(probe)
+
+
+def _temp_sibling(real, shown, mode):
+    """A new empty file next to real, created with mode (the umask still narrows it).
+    Errors name the path the user gave, not the temp name."""
     d = os.path.dirname(real)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     for _ in range(100):
         tmp = os.path.join(d, f".bbwarden-{secrets.token_hex(8)}.tmp")
         try:
-            return os.open(tmp, flags, 0o666), tmp
+            return os.open(tmp, flags, mode), tmp
         except FileExistsError:
             continue
         except OSError as e:
@@ -445,7 +459,7 @@ def _check_writable(path):
     if os.path.lexists(real):
         with open(real, "a", newline=""):
             pass
-    fd, tmp = _temp_sibling(real, path)
+    fd, tmp = _temp_sibling(real, path, 0o600)
     os.close(fd)
     os.remove(tmp)
 

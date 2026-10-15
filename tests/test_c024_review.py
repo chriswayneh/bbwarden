@@ -75,3 +75,55 @@ def test_fd_closed_and_temp_removed_if_fdopen_fails(tmp_path, monkeypatch):
         with pytest.raises(OSError):
             os.fstat(fd)
     assert os.listdir(tmp_path) == []
+
+
+def _umask():
+    mask = os.umask(0o22)
+    os.umask(mask)
+    return mask
+
+
+def _watch_temp_modes(monkeypatch):
+    """Record the temp file's mode at the moment rows are written."""
+    import csv
+
+    seen = []
+    real = csv.DictWriter.writerows
+
+    def spy(self, rows):
+        seen.append(stat.S_IMODE(os.fstat(self.writer_fd).st_mode))
+        return real(self, rows)
+
+    real_fdopen = os.fdopen
+
+    def fdopen(fd, *a, **k):
+        f = real_fdopen(fd, *a, **k)
+        csv.DictWriter.writer_fd = fd
+        return f
+
+    monkeypatch.setattr(cli.os, "fdopen", fdopen)
+    monkeypatch.setattr(csv.DictWriter, "writerows", spy)
+    return seen
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_temp_csv_is_0600_while_written_new_file(tmp_path, monkeypatch):
+    mask = _umask()
+    seen = _watch_temp_modes(monkeypatch)
+    monkeypatch.setattr(cli.os, "umask", lambda *a: pytest.fail("umask called"))
+    p = tmp_path / "new.csv"
+    cli.write_csv([{"user": "x"}], str(p), ["user"])
+    assert seen == [0o600]
+    assert stat.S_IMODE(os.stat(p).st_mode) == 0o666 & ~mask
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_temp_csv_is_0600_while_rewriting_private_report(tmp_path, monkeypatch):
+    p = tmp_path / "old.csv"
+    p.write_text("x", encoding="utf-8")
+    os.chmod(p, 0o600)
+    seen = _watch_temp_modes(monkeypatch)
+    monkeypatch.setattr(cli.os, "umask", lambda *a: pytest.fail("umask called"))
+    cli.write_csv([{"user": "x"}], str(p), ["user"])
+    assert seen == [0o600]
+    assert stat.S_IMODE(os.stat(p).st_mode) == 0o600
