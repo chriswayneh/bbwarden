@@ -236,9 +236,10 @@ def test_version_021():
     import re
 
     c = (ROOT / "CHANGELOG.md").read_text()
-    assert (
-        re.search(r"^## \[0\.2\.1\] - 2026-10-15", c, re.MULTILINE)
-        and "[Unreleased]" not in c
+    assert re.search(r"^## \[0\.2\.1\] - 2026-10-15", c, re.MULTILINE)
+    # Only the top section may be [Unreleased]; released versions keep their dates.
+    assert c.count("## [Unreleased]") <= 1 and c.find("## [Unreleased]") < c.find(
+        "## [0.2"
     )
     assert "**Breaking**" in c.split("## [0.2.1]")[1].split("## [0.2.0]")[0]
     sec = (ROOT / "SECURITY.md").read_text()

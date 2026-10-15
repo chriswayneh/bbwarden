@@ -4,6 +4,20 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- IDN hosts (for example `BBWARDEN_URL=https://bücher.example` or
+  `https://büro.my_host.internal`) are no longer refused as cross-host. The origin check
+  prepares each URL with requests itself and compares the host it would send: ASCII labels
+  are kept as written (so `bitbucket_server` works) and compared case-insensitively, and
+  non-ASCII labels are encoded per label with IDNA2008, so hosts that only IDNA2003 would
+  merge (`faß` and `fass`, `ς` and `σ`) stay different. A host that cannot be parsed or
+  encoded is never treated as the same origin. `idna>=2.5,<4` and `urllib3>=1.26,<3`
+  (both already required by requests) are now declared dependencies: bbwarden imports
+  urllib3, and urllib3 uses idna to encode the labels; `hypothesis` is in the
+  `dev` extra for a differential test against requests.
+
 ## [0.2.2] - 2026-10-15
 
 ### Security

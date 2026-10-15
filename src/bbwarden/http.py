@@ -6,6 +6,7 @@ from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
 
 import requests
+from urllib3.util import parse_url
 
 RETRY_STATUS = (429, 503)
 
@@ -68,14 +69,33 @@ IDEMPOTENT = ("GET", "HEAD", "OPTIONS", "PUT", "DELETE")
 
 
 def _origin(url):
-    """(scheme, hostname, port) with default ports filled in."""
-    u = urlsplit(url)
-    scheme = u.scheme.lower()
-    return (
-        scheme,
-        (u.hostname or "").lower(),
-        u.port or {"https": 443, "http": 80}.get(scheme),
-    )
+    """(scheme, host, port) exactly as requests will send it, default ports filled in.
+
+    The URL is prepared by requests itself (PreparedRequest.prepare_url) and the result
+    parsed with urllib3's parse_url, so the comparison uses the wire form: ASCII labels
+    are kept (bitbucket_server, my_host.internal), non-ASCII labels are IDNA2008-encoded
+    (büro.my_host.internal is sent as xn--bro-hoa.my_host.internal), and the host is
+    lowercased. Hosts that only IDNA2003 would merge (faß vs fass, ς vs σ) stay different.
+    A URL that requests refuses, that has no host, or that raises any error gets a fresh object() as host, which
+    equals nothing, so it is never treated as the same origin."""
+    # A fresh object() per call is what guarantees no match: it compares equal only to
+    # itself, and each _origin call builds a new one, so two failed URLs never compare equal,
+    # not even the same URL twice.
+    never = ("", object(), None)
+    try:
+        prepared = requests.models.PreparedRequest()
+        prepared.prepare_url(url, None)
+        u = parse_url(prepared.url or "")
+        host = (u.host or "").lower()
+        port = u.port
+    except Exception:  # noqa: BLE001 - fail closed: any error means "not the same origin"
+        return never
+    if not host:
+        return never
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]  # IPv6 literal, same form as urlsplit().hostname
+    scheme = (u.scheme or "").lower()
+    return (scheme, host, port or {"https": 443, "http": 80}.get(scheme))
 
 
 def _redirect_error(status, location, where):
