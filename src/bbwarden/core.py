@@ -306,7 +306,7 @@ def _run_steps(steps):
     for i, (label, fn) in enumerate(steps):
         try:
             fn()
-        except Exception as e:
+        except (Exception, KeyboardInterrupt) as e:  # Ctrl-C must still report progress
             log.error(
                 "apply failed at step %s after %d finished: %s",
                 label,
@@ -450,7 +450,7 @@ def apply_offboard(ws, user, plan, backend=None):
             log.warning("manual step needed: %s: %s", lab(s), e)
             ws.manual.append((lab(s), str(e)))
             continue
-        except Exception as e:
+        except (Exception, KeyboardInterrupt) as e:
             log.error(
                 "apply failed at step %s after %d finished: %s",
                 lab(s),

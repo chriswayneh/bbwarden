@@ -335,19 +335,30 @@ def main(argv=None, env=None, **kw):
         sys.exit(EXIT_CONFIG)
     except core.PartialApply as e:
         total = len(e.done) + 1 + len(e.pending)
+        interrupted = isinstance(e.error, KeyboardInterrupt)
+        why = "Ctrl-C" if interrupted else "a failure"
         print(
-            f"\nAPPLY STOPPED: {len(e.done)} of {total} steps finished before a failure.",
+            f"\nAPPLY STOPPED: {len(e.done)} of {total} steps finished before {why}.",
             file=sys.stderr,
         )
         for d in e.done:
             print(f"  done    {escape(d)}", file=sys.stderr)
-        print(f"  FAILED  {escape(e.failed)}", file=sys.stderr)
+        if interrupted:  # the request may or may not have reached the server
+            print(
+                f"  INTERRUPTED {escape(e.failed)} (may or may not have happened)",
+                file=sys.stderr,
+            )
+        else:
+            print(f"  FAILED  {escape(e.failed)}", file=sys.stderr)
         for p in e.pending:
             print(f"  not run {escape(p)}", file=sys.stderr)
         print(
             "Re-run the same command (without --apply first) to see what is left.",
             file=sys.stderr,
         )
+        if interrupted:
+            print("interrupted", file=sys.stderr)
+            sys.exit(130)
         sys.exit(f"error: {escape(core.describe_error(e.error))}")
     except (BBWardenError, core.BadIdpFile) as e:
         sys.exit(f"error: {escape(e)}")
