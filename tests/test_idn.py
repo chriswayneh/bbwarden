@@ -1,6 +1,8 @@
 """IDN hosts: requests reports the final URL punycoded, so the origin check must compare
 IDNA-normalized hostnames. Invalid IDNA hosts are never treated as same-origin."""
 
+import re
+
 import pytest
 from fakehttp import FakeSession, Resp
 
@@ -74,7 +76,8 @@ def test_redirect_message_no_userinfo_query_fragment():
     with pytest.raises(BBWardenError) as e:
         h.get("x")
     msg = str(e.value)
-    assert "evil.example.net" in msg
+    m = re.search(r"\b302 to (\S+) on ", msg)
+    assert m is not None and m.group(1) == "evil.example.net"
     for bit in ("user", "pw0rd", "p4th", "S3CRETQ", "fr4g"):
         assert bit not in msg
 
