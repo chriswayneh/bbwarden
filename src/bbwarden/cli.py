@@ -4,6 +4,7 @@ import csv
 import logging
 import os
 import sys
+import traceback
 import unicodedata
 
 from . import __version__, core
@@ -62,14 +63,36 @@ class EscapingFormatter(logging.Formatter):
     def format(self, record):
         record = copy.copy(record)
         record.msg, record.args = escape(record.getMessage()), None
+        record.exc_text = None  # never reuse text cached by another formatter
         return super().format(record)
+
+    def formatException(self, ei):
+        """Traceback frames keep their line breaks, each line escaped. An exception message
+        ("Type: text", and notes) is escaped as a whole, so a newline in it cannot start a
+        forged log line."""
+        out = []
+        for chunk in traceback.TracebackException(*ei).format():
+            body = chunk.strip("\n")
+            if chunk.startswith(
+                ("Traceback", "  File", "\nThe above", "\nDuring handling")
+            ):
+                out += [escape(ln) for ln in body.split("\n")] if body else []
+                if chunk.startswith("\n"):
+                    out[-1:] = ["", out[-1], ""] if out else []
+            else:
+                out.append(escape(body))
+        return "\n".join(out)
+
+    def formatStack(self, stack_info):
+        return "\n".join(escape(ln) for ln in stack_info.split("\n"))
 
 
 def display_width(s):
-    """Terminal columns: East Asian wide and fullwidth count 2, combining marks 0."""
+    """Terminal columns: East Asian wide and fullwidth count 2; combining, nonspacing (Mn,
+    including variation selectors such as U+FE0F) and enclosing (Me) marks count 0."""
     return sum(
         0
-        if unicodedata.combining(c)
+        if unicodedata.combining(c) or unicodedata.category(c) in ("Mn", "Me")
         else 2
         if unicodedata.east_asian_width(c) in ("W", "F")
         else 1

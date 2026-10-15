@@ -164,13 +164,13 @@ are reported as `missing`, so a partial export cannot look clean.
 `--csv` always writes a header row, even with no results, and prefixes cells starting with
 `=`, `+`, `-`, `@`, tab or carriage return (also after leading whitespace or invisible
 control and format characters such as `\u200b`) with `'` so spreadsheets do not run them as
-formulas. CSV cells keep the original data otherwise.
+formulas. CSV cells keep the original data otherwise. The CSV path is checked for writability
+before anything is printed.
 
 Terminal output is escaped: in table cells and in `error:`, `MANUAL`, `NOTE:` and log lines,
 control and format characters (C0, DEL, C1, Unicode Cc, Cf, Cs, Co, Cn, Zl, Zp) are shown as
-escaped code points such as `\x1b` or `\u202e` (a backslash shows as `\\`), so names from Bitbucket or an IdP cannot inject terminal
-escape sequences or bidi overrides. The CSV path is checked for writability before
-anything is printed.
+escaped code points such as `\x1b` or `\u202e` (a backslash shows as `\\`), so names from
+Bitbucket or an IdP cannot inject terminal escape sequences or bidi overrides.
 
 ### Sample output
 

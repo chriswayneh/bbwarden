@@ -119,3 +119,44 @@ def test_argparse_invalid_choice_escaped(capsys):
         cli.main(["orphans", "--idp", "x\u202e\x07"])
     err = capsys.readouterr().err
     assert "\u202e" not in err and "\x07" not in err
+
+
+def _forged(text):
+    return [ln for ln in text.splitlines() if ln.startswith("bbwarden: ERROR forged")]
+
+
+def test_exc_info_message_cannot_forge_lines(capsys):
+    handler = logging.StreamHandler()
+    handler.setFormatter(cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s"))
+    log = logging.getLogger("bbwarden.test_exc")
+    log.addHandler(handler)
+    try:
+        try:
+            try:
+                raise ValueError("inner\nbbwarden: ERROR forged\x1b[2J")
+            except ValueError as e:
+                raise RuntimeError("outer\nbbwarden: ERROR forged") from e
+        except RuntimeError:
+            log.error("apply failed", exc_info=True)  # noqa: G201 - the exc_info path itself
+    finally:
+        log.removeHandler(handler)
+    err = capsys.readouterr().err
+    assert "Traceback (most recent call last):" in err and "\x1b" not in err
+    assert _forged(err) == []
+    assert "ValueError: inner\\x0abbwarden: ERROR forged\\x1b[2J" in err
+    assert "RuntimeError: outer\\x0abbwarden: ERROR forged" in err
+    assert len(err.splitlines()) > 5  # real traceback line breaks kept
+
+
+def test_stack_info_lines_escaped(capsys):
+    f = cli.EscapingFormatter("%(message)s")
+    out = f.formatStack('  File "x.py", line 1, in f\n    name = "a\x1b[2J"')
+    assert "\x1b" not in out and len(out.splitlines()) == 2
+
+
+@pytest.mark.parametrize(
+    "s,w",
+    [("e\u0301", 1), ("\u2764\ufe0f", 1), ("a\u20dd", 1), ("\u4e2d", 2), ("abc", 3)],
+)
+def test_display_width_zero_width_marks(s, w):
+    assert cli.display_width(s) == w
