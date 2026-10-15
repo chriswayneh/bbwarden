@@ -79,7 +79,7 @@ def _idna_host(host):
     if not host or ":" in host:
         return host
     try:
-        return idna.encode(host, uts46=True).decode("ascii").lower()
+        return idna.encode(host, uts46=True).decode("ascii")
     except (idna.IDNAError, UnicodeError, ValueError):
         return object()
 
