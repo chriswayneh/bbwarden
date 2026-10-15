@@ -51,8 +51,10 @@ def build_parser():
     s.add_argument("repo")
     s.add_argument("--apply", action="store_true")
     s = sub.add_parser("offboard", parents=[common], help="remove a user everywhere")
-    s.add_argument("user")
+    s.add_argument("user", help="username (Data Center) or account_id/nickname (Cloud)")
     s.add_argument("--apply", action="store_true")
+    s.add_argument("--skip-memberships", action="store_true",
+                   help="only remove direct grants; leave group memberships to your directory")
     return p
 
 
@@ -96,7 +98,7 @@ def _run(args, env, **kw):
             else:
                 http_kw = {k: v for k, v in kw.items() if k not in ("session_factory", "crowd_session")}
                 crowd = crowd_from_env(env, session_factory=kw.get("crowd_session"), **http_kw)
-                status = crowd_status(crowd, sorted(ws.users))
+                status = crowd_status(crowd, sorted({v.get('name') or u for u, v in ws.users.items()}))
             rows = core.orphans(ws, status)
         elif args.cmd == "regroup":
             rows = core.regroup(ws, args.repo)
@@ -106,9 +108,13 @@ def _run(args, env, **kw):
             else:
                 note = "DRY RUN: re-run with --apply to make these changes"
         elif args.cmd == "offboard":
-            rows = core.offboard(ws, args.user)
+            user = core.resolve_user(ws, args.user)
+            if backend and not args.skip_memberships:
+                backend.load_memberships(ws, user)
+                user = core.resolve_user(ws, args.user)
+            rows = core.offboard(ws, user, memberships=not args.skip_memberships)
             if args.apply:
-                core.apply_offboard(ws, args.user, rows, backend)
+                core.apply_offboard(ws, user, rows, backend)
                 note = f"APPLIED to {target}"
             else:
                 note = "DRY RUN: re-run with --apply to make these changes"

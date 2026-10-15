@@ -63,11 +63,11 @@ def test_cloud_live_status_is_unknown_not_active():
         ("GET", "/2.0/workspaces/acme/projects", None): page([]),
         ("GET", "/2.0/repositories/acme", None): page([{"slug": "api", "project": {"key": "C"}}]),
         ("GET", "/2.0/repositories/acme/api/permissions-config/users", None): page(
-            [{"user": {"uuid": "{1}", "nickname": "bob"}, "permission": "read"}]),
+            [{"user": {"uuid": "{1}", "account_id": "acc1", "nickname": "bob"}, "permission": "read"}]),
         ("GET", "/2.0/repositories/acme/api/permissions-config/groups", None): page([]),
     })
     ws = CloudBackend(Http(sess, "https://api.bitbucket.org"), "acme").load()
-    assert ws.users["bob"]["active"] is None
+    assert ws.users["acc1"]["active"] is None and ws.users["acc1"]["name"] == "bob"
     assert core.who(ws, "api")[0]["flag"] == "UNKNOWN"
 
 
@@ -111,6 +111,9 @@ class FlakyBackend:
 
     def remove_member(self, group, user):
         self._call("remove_member", group, user)
+
+    def load_memberships(self, ws, user):
+        pass
 
     def grant_group(self, ws, key, group, perm):
         self._call("grant_group", key, group, perm)

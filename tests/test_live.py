@@ -131,6 +131,7 @@ def dc_routes():
             [{"user": {"name": "bob"}, "permission": "REPO_ADMIN"}]),
         ("GET", f"{P}/projects/CORE/repos/api/permissions/groups", None): page([]),
         ("GET", f"{P}/admin/groups/more-members", None): page([{"name": "bob"}]),
+        ("GET", f"{P}/admin/users/more-members", None): page([{"name": "devs"}]),
         ("GET", f"{P}/admin/users", None): page([{"name": "bob", "active": True},
                                                 {"name": "dave", "active": False}]),
         ("DELETE", f"{P}/projects/CORE/permissions/users", None): Resp(204),
@@ -175,7 +176,7 @@ def test_dc_offboard_apply():
 def test_cloud_load_and_offboard():
     W = "/2.0"
     page = lambda vals: Resp(body={"values": vals})
-    bob = {"uuid": "{b0b}", "nickname": "bob"}
+    bob = {"uuid": "{b0b}", "account_id": "557058:b0b", "nickname": "bob"}
     sess = FakeSession({
         ("GET", f"{W}/workspaces/acme/projects", None): page([{"key": "CORE"}]),
         ("GET", f"{W}/workspaces/acme/projects/CORE/permissions-config/users", None): page([]),
@@ -184,14 +185,15 @@ def test_cloud_load_and_offboard():
         ("GET", f"{W}/repositories/acme/api/permissions-config/users", None): page(
             [{"user": bob, "permission": "write"}]),
         ("GET", f"{W}/repositories/acme/api/permissions-config/groups", None): page([]),
-        ("DELETE", f"{W}/repositories/acme/api/permissions-config/users/{{b0b}}", None): Resp(204),
+        ("DELETE", f"{W}/repositories/acme/api/permissions-config/users/557058:b0b", None): Resp(204),
     })
     be = CloudBackend(Http(sess, "https://api.bitbucket.org", sleep=lambda s: None), "acme")
     ws = be.load()
-    assert ws.repos["api"]["users"] == {"bob": "WRITE"}
+    assert ws.repos["api"]["users"] == {"557058:b0b": "WRITE"}
     from bbwarden import core
-    core.apply_offboard(ws, "bob", core.offboard(ws, "bob"), be)
-    assert sess.calls[-1][0] == "DELETE" and "{b0b}" in sess.calls[-1][1]
+    user = core.resolve_user(ws, "bob")
+    core.apply_offboard(ws, user, core.offboard(ws, user), be)
+    assert sess.calls[-1][0] == "DELETE" and sess.calls[-1][1].endswith("/users/557058:b0b")
 
 
 def test_crowd_orphans_live(capsys):

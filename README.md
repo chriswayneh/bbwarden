@@ -35,7 +35,7 @@ bbwarden offboard dave --demo
 | `direct` | Direct user grants that skip groups |
 | `orphans --idp crowd or csv` | People with access who are disabled in Crowd or an IdP CSV export (`--idp-file`, columns `user,active`) |
 | `regroup <repo> [--apply]` | Plan replacing direct grants with group grants |
-| `offboard <user> [--apply]` | Plan removing a user from every repo, project and group |
+| `offboard <user> [--apply] [--skip-memberships]` | Plan removing a user from every repo, project and group |
 
 ## Live use
 
@@ -76,6 +76,22 @@ Hardening:
   `--apply` to see the remaining plan.
 - Bitbucket Cloud does not expose account status, so use `orphans --idp csv` or `--idp crowd`
   for Cloud.
+- Bitbucket Cloud users are keyed by `account_id` (shown as `nickname (account_id)`).
+  `offboard` accepts an account_id or a nickname; a nickname shared by several accounts is
+  refused, so pass the account_id.
+- Cloud is detected only when the `BBWARDEN_URL` hostname is exactly `bitbucket.org` or
+  `api.bitbucket.org`. Plain `http://` is allowed only for `localhost` and `127.0.0.1`.
+- Pagination links must match the base URL scheme, host and port.
+- Rate-limit retries apply only to idempotent methods (GET, PUT, DELETE). A POST that gets
+  429 or 503 is not retried; check the state and re-run.
+- A non-JSON response is reported with its status code only, never its body.
+- A grant with an unknown permission name is marked `manual` by `regroup`.
+- Group membership on Cloud is read through Bitbucket's legacy 1.0 groups API, because
+  2.0 has no group membership endpoint. It may change or be retired by Atlassian.
+- `offboard` loads every group the user belongs to, not only groups holding a grant.
+  On Data Center, membership removal fails for groups from a read-only Crowd or LDAP
+  directory; remove those in the directory itself and use `offboard --skip-memberships` to
+  remove only direct grants.
 - `--idp crowd` treats a user Crowd does not know (404) as disabled.
 
 `--idp csv` reads `--idp-file` with columns `user,active` (`true/false`, `1/0`, `yes/no`).

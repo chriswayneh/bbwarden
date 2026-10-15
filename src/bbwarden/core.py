@@ -2,9 +2,29 @@
 import csv
 import logging
 
-from .model import rank
+from .model import RANK, rank
 
 log = logging.getLogger("bbwarden")
+
+
+class AmbiguousUser(KeyError):
+    pass
+
+
+def label(ws, u):
+    """Display name: 'nickname (account_id)' when the key is an opaque id, else the key."""
+    name = ws.users.get(u, {}).get("name")
+    return f"{name} ({u})" if name and name != u else u
+
+
+def resolve_user(ws, name):
+    """Map a CLI user argument to a user key. Matches a key exactly, else a unique display name."""
+    if name in ws.users:
+        return name
+    hits = sorted(k for k, v in ws.users.items() if v.get("name") == name)
+    if len(hits) > 1:
+        raise AmbiguousUser(f"ambiguous user {name}: {', '.join(hits)} (pass one account_id)")
+    return hits[0] if hits else name
 
 
 class PartialApply(Exception):
@@ -71,7 +91,7 @@ def who(ws, target):
     for (s, u), v in sorted(best.items()):
         active = ws.users.get(u, {}).get("active")
         flag = "DISABLED" if active is False else ("UNKNOWN" if active is None else "")
-        rows.append({"repo": s, "user": u, "effective": v["perm"],
+        rows.append({"repo": s, "user": label(ws, u), "effective": v["perm"],
                      "sources": ", ".join(sorted(set(v["sources"]))), "flag": flag})
     return rows
 
@@ -80,10 +100,10 @@ def direct(ws):
     rows = []
     for k, p in sorted(ws.projects.items()):
         for u, perm in sorted(p["users"].items()):
-            rows.append({"scope": "project", "name": k, "user": u, "permission": perm})
+            rows.append({"scope": "project", "name": k, "user": label(ws, u), "permission": perm})
     for s, r in sorted(ws.repos.items()):
         for u, perm in sorted(r["users"].items()):
-            rows.append({"scope": "repo", "name": s, "user": u, "permission": perm})
+            rows.append({"scope": "repo", "name": s, "user": label(ws, u), "permission": perm})
     return rows
 
 
@@ -101,10 +121,11 @@ def orphans(ws, status):
     for s in sorted(ws.repos):
         seen = {}
         for u, p, src in _grants(ws, s):
-            if status.get(u, True) is False:
+            name = ws.users.get(u, {}).get("name")
+            if status.get(u, status.get(name, True)) is False:
                 seen.setdefault(u, []).append(f"{src}:{p}")
         for u, srcs in sorted(seen.items()):
-            rows.append({"repo": s, "user": u, "access": ", ".join(srcs), "idp_status": "disabled"})
+            rows.append({"repo": s, "user": label(ws, u), "access": ", ".join(srcs), "idp_status": "disabled"})
     return rows
 
 
@@ -124,6 +145,10 @@ def regroup(ws, slug):
     eff = _effective(ws, slug)
     plan = []
     for u, p in sorted(repo["users"].items()):
+        if p not in RANK:
+            plan.append({"repo": slug, "user": u, "action": "manual", "group": "",
+                         "detail": f"unknown permission {p}; review by hand"})
+            continue
         mine = sorted(g for g, m in ws.groups.items() if u in m)
         groups = [g for g in mine if all(eff.get(m, 0) >= rank(p) for m in ws.groups[g])]
         if mine and not groups:
@@ -181,7 +206,7 @@ def apply_regroup(ws, plan, backend=None):
     return _run_steps(steps)
 
 
-def offboard(ws, user):
+def offboard(ws, user, memberships=True):
     plan = []
     for k, p in sorted(ws.projects.items()):
         if user in p["users"]:
@@ -192,7 +217,7 @@ def offboard(ws, user):
             plan.append({"scope": "repo", "name": s, "action": "remove direct grant",
                          "detail": r["users"][user]})
     for g, m in sorted(ws.groups.items()):
-        if user in m:
+        if memberships and user in m:
             plan.append({"scope": "group", "name": g, "action": "remove membership", "detail": ""})
     return plan
 

@@ -33,6 +33,16 @@ def _safe_url(url):
     return url.split("?", 1)[0]
 
 
+IDEMPOTENT = ("GET", "HEAD", "OPTIONS", "PUT", "DELETE")
+
+
+def _origin(url):
+    """(scheme, hostname, port) with default ports filled in."""
+    u = urlsplit(url)
+    scheme = u.scheme.lower()
+    return scheme, (u.hostname or "").lower(), u.port or {"https": 443, "http": 80}.get(scheme)
+
+
 class Http:
     def __init__(self, session, base_url, max_retries=5, base_delay=1.0, max_delay=60.0,
                  sleep=time.sleep, timeout=30):
@@ -46,7 +56,7 @@ class Http:
 
     def url(self, path):
         if path.startswith(("http://", "https://")):
-            if urlsplit(path).netloc != urlsplit(self.base).netloc:
+            if _origin(path) != _origin(self.base):
                 raise BBWardenError(f"refusing to follow link to another host: {_safe_url(path)}")
             return path
         return f"{self.base}/{path.lstrip('/')}"
@@ -60,7 +70,8 @@ class Http:
             except OSError as e:  # requests exceptions subclass IOError
                 raise BBWardenError(f"network error on {method} {_safe_url(url)}: "
                                     f"{type(e).__name__}") from None
-            if resp.status_code in RETRY_STATUS and attempt < self.max_retries:
+            if (resp.status_code in RETRY_STATUS and attempt < self.max_retries
+                    and method.upper() in IDEMPOTENT):
                 delay = _retry_after(resp)
                 if delay is None:
                     delay = self.base_delay * (2 ** attempt) + random.uniform(0, self.base_delay)
@@ -76,6 +87,9 @@ class Http:
             raise AuthError(f"403 Forbidden on {where}: the credentials work but lack permission "
                             "(needs project/repo admin read; --apply needs admin write)")
         if code in RETRY_STATUS:
+            if method.upper() not in IDEMPOTENT:
+                raise BBWardenError(f"{code} on {where}: not retried because {method} is not "
+                                    "idempotent; check the current state, then re-run")
             raise BBWardenError(f"{code} on {where}: still rate limited after "
                                 f"{self.max_retries} retries; try again later")
         if code >= 400:
@@ -83,7 +97,13 @@ class Http:
         return resp
 
     def get(self, path, **kw):
-        return self.request("GET", path, **kw).json()
+        resp = self.request("GET", path, **kw)
+        try:
+            return resp.json()
+        except ValueError:
+            raise BBWardenError(f"HTTP {resp.status_code} on GET {_safe_url(self.url(path))}: "
+                                "response was not JSON (check BBWARDEN_URL points at the "
+                                "Bitbucket base URL)") from None
 
     def paginate(self, path, params=None):
         """Yield items across pages. Handles Cloud (next) and Data Center (isLastPage)."""

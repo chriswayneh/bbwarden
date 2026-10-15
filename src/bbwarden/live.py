@@ -1,5 +1,6 @@
 """Live Bitbucket backends (Cloud and Data Center) built on atlassian-python-api sessions."""
 import os
+from urllib.parse import urlsplit
 
 from .http import AuthError, BBWardenError, Http
 from .model import Workspace
@@ -21,7 +22,8 @@ def creds_from_env(env=None):
                               ("BBWARDEN_TOKEN", token)) if not v]
     if missing:
         raise AuthError(f"missing {', '.join(missing)}: set them in the environment or use --demo")
-    if not url.startswith("https://") and not url.startswith("http://localhost"):
+    u = urlsplit(url)
+    if not (u.scheme == "https" or (u.scheme == "http" and u.hostname in ("localhost", "127.0.0.1"))):
         raise BBWardenError("BBWARDEN_URL must use https:// so credentials are not sent in clear text")
     return url, user, token
 
@@ -64,6 +66,14 @@ class DataCenter:
             lambda: {u["name"]: u.get("active") for u in self.h.paginate(f"{p}/admin/users")})
         return ws
 
+    def load_memberships(self, ws, user):
+        """Add every group the user belongs to, not only groups that hold a grant."""
+        for g in self.h.paginate("rest/api/1.0/admin/users/more-members", {"context": user}):
+            members = ws.groups.setdefault(g["name"], [])
+            if user not in members:
+                members.append(user)
+        ws.users.setdefault(user, {"active": None})
+
     def remove_user(self, ws, scope, key, user):
         p = "rest/api/1.0"
         path = (f"{p}/projects/{key}/permissions/users" if scope == "project" else
@@ -81,16 +91,24 @@ class DataCenter:
 
 
 class CloudBackend:
+    """Users are keyed by account_id (stable and unique); nicknames are display only."""
     cloud = True
 
     def __init__(self, http, workspace):
         self.h, self.w = http, workspace
-        self.uuids = {}
+        self.uuids = {}   # account_id -> uuid
+        self.names = {}   # account_id -> nickname
 
     def _user(self, u):
-        name = u.get("nickname") or u.get("display_name") or u["uuid"]
-        self.uuids[name] = u["uuid"]
-        return name
+        key = u.get("account_id") or u["uuid"]
+        self.uuids[key] = u["uuid"]
+        self.names[key] = u.get("nickname") or u.get("display_name") or key
+        return key
+
+    def _uuid(self, user):
+        if user not in self.uuids:
+            raise BBWardenError(f"unknown Cloud user {user}: pass the account_id shown by bbwarden")
+        return self.uuids[user]
 
     def load(self):
         ws, w = Workspace(), self.w
@@ -111,14 +129,24 @@ class CloudBackend:
                 "groups": {x["group"]["slug"]: _perm(CLOUD_PERM, x["permission"]) for x in
                            self.h.paginate(f"2.0/repositories/{w}/{s}/permissions-config/groups")},
             }
+        # Legacy 1.0 groups API: Bitbucket Cloud has no 2.0 group membership endpoint yet.
         _fill(ws, lambda g: [self._user(m) for m in self.h.get(f"1.0/groups/{w}/{g}/members")], None)
+        for k, n in self.names.items():
+            ws.users.setdefault(k, {"active": None})["name"] = n
         return ws
 
+    def load_memberships(self, ws, user):
+        """Load every workspace group (legacy 1.0 API) so offboard sees all memberships."""
+        for g in self.h.get(f"1.0/groups/{self.w}"):
+            ws.groups[g["slug"]] = [self._user(m) for m in g.get("members", [])]
+        for k, n in self.names.items():
+            ws.users.setdefault(k, {"active": None})["name"] = n
+
     def remove_user(self, ws, scope, key, user):
-        uid = self.uuids.get(user, user)
-        path = (f"2.0/workspaces/{self.w}/projects/{key}/permissions-config/users/{uid}"
+        self._uuid(user)   # fail on unknown users instead of guessing
+        path = (f"2.0/workspaces/{self.w}/projects/{key}/permissions-config/users/{user}"
                 if scope == "project" else
-                f"2.0/repositories/{self.w}/{key}/permissions-config/users/{uid}")
+                f"2.0/repositories/{self.w}/{key}/permissions-config/users/{user}")
         self.h.request("DELETE", path)
 
     def grant_group(self, ws, key, group, perm):
@@ -126,7 +154,7 @@ class CloudBackend:
                        json={"permission": perm.lower()})
 
     def remove_member(self, group, user):
-        self.h.request("DELETE", f"1.0/groups/{self.w}/{group}/members/{self.uuids.get(user, user)}")
+        self.h.request("DELETE", f"1.0/groups/{self.w}/{group}/members/{self._uuid(user)}")
 
 
 def _fill(ws, members, statuses):
@@ -158,10 +186,17 @@ def crowd_status(http, users):
     return out
 
 
+CLOUD_HOSTS = ("bitbucket.org", "api.bitbucket.org")
+
+
+def is_cloud(url):
+    return (urlsplit(url).hostname or "").lower() in CLOUD_HOSTS
+
+
 def backend_from_env(env=None, session_factory=make_session, **http_kw):
     env = os.environ if env is None else env
     url, user, token = creds_from_env(env)
-    cloud = "bitbucket.org" in url
+    cloud = is_cloud(url)
     if cloud:
         w = env.get("BBWARDEN_WORKSPACE")
         if not w:
