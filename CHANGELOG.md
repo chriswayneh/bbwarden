@@ -27,7 +27,8 @@ All notable changes to bbwarden are listed here. The format follows
   the old file. A symlink is followed: its target is updated and the link stays. An existing
   target that is not a regular file (a FIFO, `/dev/stdout`, `/dev/fd/N` from process
   substitution, a character device) is written directly, with no temporary file or rename,
-  as before.
+  as before. A Unix socket target is refused before any output with a configuration error
+  (exit 2).
 - Crowd status needs a real boolean `active` flag; a string, number or missing flag is an
   error instead of a guess.
 - With `--raw-csv`, lone surrogates are written as U+FFFD, so they can no longer be confused

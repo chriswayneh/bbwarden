@@ -185,7 +185,8 @@ a warning on stderr, and formulas are still neutralized and lone surrogates (whi
 before anything is printed, without creating, truncating or removing it, and the CSV is written
 to a temporary file next to it and renamed into place (so the folder must be writable; a symlink is followed and its target updated), and a failed write keeps the old file. An
 existing target that is not a regular file, such as a FIFO, `/dev/stdout`, `/dev/fd/N`
-(`--csv >(gzip > out.csv.gz)`) or a character device, is written directly instead.
+(`--csv >(gzip > out.csv.gz)`) or a character device, is written directly instead. A Unix
+socket is refused up front with a configuration error (exit 2).
 
 Terminal output is escaped: in table cells and in `error:`, `MANUAL`, `NOTE:` and log lines,
 control and format characters (C0, DEL, C1, Unicode Cc, Cf, Cs, Co, Cn, Zl, Zp) are shown as

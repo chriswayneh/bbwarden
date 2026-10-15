@@ -271,6 +271,7 @@ def write_csv(rows, path, cols, raw=False):
     rename: the existing file's mode, or 0o666 minus the umask for a new file.
     An existing target that is not a regular file (a FIFO, /dev/stdout, /dev/fd/N, a
     character device) is written directly: it cannot be replaced by a rename."""
+    _refuse_socket(path)
     if _is_special(path):
         sys.stdout.flush()  # /dev/stdout: keep the table before the CSV
         with open(path, "w", newline="", encoding="utf-8") as f:
@@ -314,6 +315,18 @@ def _is_special(path):
     except OSError:
         return False
     return not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode))
+
+
+def _refuse_socket(path):
+    """A Unix socket cannot be opened as a file; say so instead of a bare ENXIO."""
+    try:
+        is_sock = stat.S_ISSOCK(os.stat(path).st_mode)
+    except OSError:
+        return
+    if is_sock:
+        raise ConfigError(
+            f"--csv {path} is a Unix socket; write to a file, FIFO or /dev/stdout instead"
+        )
 
 
 def _remove_quietly(p):
@@ -474,6 +487,7 @@ def _check_writable(path):
     """Fail before any output if the CSV path cannot be written. Never creates, truncates
     or removes the target itself: an existing file is opened for append only, and the
     directory is probed with a temporary sibling (write_csv renames one into place)."""
+    _refuse_socket(path)
     if _is_special(path):  # opening a FIFO here would block or eat the reader's EOF
         if not os.access(path, os.W_OK):
             raise PermissionError(13, "Permission denied", path)

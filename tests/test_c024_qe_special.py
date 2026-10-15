@@ -90,3 +90,30 @@ def test_csv_to_dev_fd_like_process_substitution():
             if fd >= 0:
                 os.close(fd)
     assert data.startswith(b"scope,name,user,permission")
+
+
+@posix
+@pytest.mark.skipif(
+    not hasattr(__import__("socket"), "AF_UNIX"), reason="needs AF_UNIX"
+)
+def test_csv_to_unix_socket_is_refused_before_output(capsys):
+    import shutil
+    import socket
+    import tempfile
+
+    d = tempfile.mkdtemp(prefix="bbw")  # short path: AF_UNIX names are length-limited
+    try:
+        path = os.path.join(d, "s")
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.bind(path)
+        try:
+            with pytest.raises(SystemExit) as e:
+                cli.main(["direct", "--demo", "--csv", path])
+        finally:
+            s.close()
+        assert e.value.code == 2
+        cap = capsys.readouterr()
+        assert cap.out == "" and "socket" in cap.err
+        assert os.path.exists(path)
+    finally:
+        shutil.rmtree(d)
