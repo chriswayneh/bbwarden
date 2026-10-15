@@ -226,8 +226,10 @@ class Parser(argparse.ArgumentParser):
 
 
 def _no_surrogates(v):
-    """Lone surrogates (Cs) cannot be encoded as UTF-8; escape them even in raw CSV."""
-    return "".join(escape(c) if unicodedata.category(c) == "Cs" else c for c in v)
+    """Lone surrogates (Cs) cannot be encoded as UTF-8. Raw CSV writes U+FFFD for them,
+    the standard replacement character, so they never look like the literal text
+    \\ud800 that a name could really contain."""
+    return "".join("\ufffd" if unicodedata.category(c) == "Cs" else c for c in v)
 
 
 def _safe_cell(v, raw=False):

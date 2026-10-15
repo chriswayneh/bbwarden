@@ -168,7 +168,7 @@ formulas. The CSV file is UTF-8, and by default its cells are escaped like termi
 (below): backslashes are doubled and control and format characters become escaped code
 points, so opening it in a terminal or viewer never runs escape sequences. Use `--raw-csv`
 (any command) when you import the CSV into other tools and need the original data; it prints
-a warning on stderr, and formulas are still neutralized and lone surrogates still escaped. The CSV path is checked for writability
+a warning on stderr, and formulas are still neutralized and lone surrogates (which UTF-8 cannot hold) are written as U+FFFD. The CSV path is checked for writability
 before anything is printed.
 
 Terminal output is escaped: in table cells and in `error:`, `MANUAL`, `NOTE:` and log lines,
