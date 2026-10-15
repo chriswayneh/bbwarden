@@ -1,42 +1,60 @@
 import argparse
 import csv
+import logging
 import os
 import sys
 
-from . import core
-from .model import demo_workspace, load_live
+from . import __version__, core
+from .http import BBWardenError
+from .live import backend_from_env, crowd_from_env, crowd_status
+from .model import demo_workspace
+
+# Displayed and exported columns per command. Plan rows may carry extra internal fields
+# (regroup keeps the raw user "key" for --apply); they are shown only if listed here.
+COLUMNS = {
+    "who": ["repo", "user", "effective", "sources", "flag"],
+    "direct": ["scope", "name", "user", "permission"],
+    "orphans": ["repo", "user", "access", "idp_status"],
+    "regroup": ["repo", "user", "action", "group", "detail"],
+    "offboard": ["scope", "name", "action", "detail"],
+}
+FORMULA = ("=", "+", "-", "@", "\t", "\r")
 
 
-def table(rows):
+def _safe_cell(v):
+    """Neutralize spreadsheet formulas (CSV injection) by prefixing a single quote,
+    also when the formula follows leading whitespace."""
+    v = str(v)
+    return "'" + v if v.startswith(FORMULA) or v.lstrip().startswith(FORMULA[:4]) else v
+
+
+def table(rows, cols):
     if not rows:
         return "(no results)"
-    cols = list(rows[0])
     w = {c: max(len(c), *(len(str(r[c])) for r in rows)) for c in cols}
     line = lambda r: "  ".join(str(r[c]).ljust(w[c]) for c in cols).rstrip()
     return "\n".join([line({c: c.upper() for c in cols}),
                       "  ".join("-" * w[c] for c in cols)] + [line(r) for r in rows])
 
 
-def write_csv(rows, path):
+def write_csv(rows, path, cols):
+    """Always writes the header, even with no rows."""
     with open(path, "w", newline="") as f:
-        if rows:
-            wr = csv.DictWriter(f, fieldnames=list(rows[0]))
-            wr.writeheader()
-            wr.writerows(rows)
+        wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        wr.writeheader()
+        wr.writerows({c: _safe_cell(r.get(c, "")) for c in cols} for r in rows)
 
 
-def get_ws(args):
+def get_ws(args, env=None, **kw):
     if args.demo:
-        return demo_workspace()
-    url = os.environ.get("BBWARDEN_URL")
-    if not url:
-        sys.exit("error: set BBWARDEN_URL, BBWARDEN_USER, BBWARDEN_TOKEN or use --demo")
-    return load_live(url, os.environ.get("BBWARDEN_USER"), os.environ.get("BBWARDEN_TOKEN"),
-                     cloud="bitbucket.org" in url)
+        return demo_workspace(), None
+    backend = backend_from_env(env, **kw)
+    return backend.load(), backend
 
 
 def build_parser():
     p = argparse.ArgumentParser(prog="bbwarden", description="Bitbucket least-privilege and offboarding")
+    p.add_argument("--version", action="version", version=f"bbwarden {__version__}")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--demo", action="store_true", help="use built-in mock workspace")
     common.add_argument("--csv", metavar="OUT", help="also write results to CSV")
@@ -51,15 +69,53 @@ def build_parser():
     s.add_argument("repo")
     s.add_argument("--apply", action="store_true")
     s = sub.add_parser("offboard", parents=[common], help="remove a user everywhere")
-    s.add_argument("user")
+    s.add_argument("user", help="username (Data Center) or account_id/nickname (Cloud)")
     s.add_argument("--apply", action="store_true")
+    s.add_argument("--skip-memberships", action="store_true",
+                   help="only remove direct grants; leave group memberships to your directory")
     return p
 
 
-def main(argv=None):
+def main(argv=None, env=None, **kw):
     args = build_parser().parse_args(argv)
-    ws = get_ws(args)
+    if not logging.getLogger("bbwarden").handlers:
+        logging.basicConfig(level=logging.WARNING, format="bbwarden: %(levelname)s %(message)s")
+    try:
+        return _run(args, env, **kw)
+    except core.PartialApply as e:
+        total = len(e.done) + 1 + len(e.pending)
+        print(f"\nAPPLY STOPPED: {len(e.done)} of {total} steps finished before a failure.",
+              file=sys.stderr)
+        for d in e.done:
+            print(f"  done    {d}", file=sys.stderr)
+        print(f"  FAILED  {e.failed}", file=sys.stderr)
+        for p in e.pending:
+            print(f"  not run {p}", file=sys.stderr)
+        print("Re-run the same command (without --apply first) to see what is left.", file=sys.stderr)
+        sys.exit(f"error: {e.error}")
+    except (BBWardenError, core.BadIdpFile) as e:
+        sys.exit(f"error: {e}")
+    except OSError as e:
+        if e.filename:
+            sys.exit(f"error: cannot open {e.filename}: {e.strerror or e}")
+        sys.exit(f"error: {e.strerror or e}")
+
+
+def _check_writable(path):
+    """Fail before any output if the CSV path cannot be written. Leaves no new file behind."""
+    existed = os.path.exists(path)
+    with open(path, "a", newline=""):
+        pass
+    if not existed:
+        os.remove(path)
+
+
+def _run(args, env, **kw):
+    if args.csv:
+        _check_writable(args.csv)
+    ws, backend = get_ws(args, env, **{k: v for k, v in kw.items() if k != "crowd_session"})
     note = ""
+    target = "demo workspace" if args.demo else "Bitbucket"
     try:
         if args.cmd == "who":
             rows = core.who(ws, args.target)
@@ -73,34 +129,45 @@ def main(argv=None):
             elif args.demo:
                 status = {u: v["active"] for u, v in ws.users.items()}
             else:
-                sys.exit("error: live Crowd lookup lands in milestone 2; use --demo or --idp csv")
+                http_kw = {k: v for k, v in kw.items() if k not in ("session_factory", "crowd_session")}
+                crowd = crowd_from_env(env, session_factory=kw.get("crowd_session"), **http_kw)
+                status = crowd_status(crowd, sorted({v.get('name') or u for u, v in ws.users.items()}))
             rows = core.orphans(ws, status)
         elif args.cmd == "regroup":
             rows = core.regroup(ws, args.repo)
             if args.apply:
-                if not args.demo:
-                    sys.exit("error: live --apply lands in milestone 2")
-                core.apply_regroup(ws, rows)
-                note = "APPLIED to demo workspace"
+                core.apply_regroup(ws, rows, backend)
+                note = f"APPLIED to {target}"
             else:
                 note = "DRY RUN: re-run with --apply to make these changes"
         elif args.cmd == "offboard":
-            rows = core.offboard(ws, args.user)
+            if backend and not args.skip_memberships:
+                backend.load_memberships(ws, args.user)
+            user = core.resolve_user(ws, args.user)
+            rows = core.offboard(ws, user, memberships=not args.skip_memberships)
             if args.apply:
-                if not args.demo:
-                    sys.exit("error: live --apply lands in milestone 2")
-                core.apply_offboard(ws, args.user, rows)
-                note = "APPLIED to demo workspace"
+                core.apply_offboard(ws, user, rows, backend)
+                note = f"APPLIED to {target}"
             else:
                 note = "DRY RUN: re-run with --apply to make these changes"
     except KeyError as e:
         sys.exit(f"error: {e.args[0]}")
-    print(table(rows))
+    cols = COLUMNS[args.cmd]
+    print(table(rows, cols))
+    if ws.manual:
+        total = len(rows)
+        print(f"\nAPPLY INCOMPLETE: {total - len(ws.manual)} of {total} steps finished. "
+              "MANUAL steps left:", file=sys.stderr)
+        for lab, why in ws.manual:
+            print(f"  MANUAL  {lab}: {why}", file=sys.stderr)
+        note = ""
     if note:
         print(f"\n{note}")
+    for n in ws.notes:
+        print(f"NOTE: {n}", file=sys.stderr)
     if args.csv:
-        write_csv(rows, args.csv)
-    return 0
+        write_csv(rows, args.csv, cols)
+    return 1 if ws.manual else 0
 
 
 if __name__ == "__main__":
