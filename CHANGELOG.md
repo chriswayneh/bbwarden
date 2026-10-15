@@ -14,7 +14,8 @@ All notable changes to bbwarden are listed here. The format follows
   non-ASCII labels are encoded per label with IDNA2008, so hosts that only IDNA2003 would
   merge (`faß` and `fass`, `ς` and `σ`) stay different. A host that cannot be parsed or
   encoded is never treated as the same origin. `idna>=2.5,<4` and `urllib3>=1.26,<3`
-  (both already required by requests) are now direct dependencies; `hypothesis` is in the
+  (both already required by requests) are now declared dependencies: bbwarden imports
+  urllib3, and urllib3 uses idna to encode the labels; `hypothesis` is in the
   `dev` extra for a differential test against requests.
 
 ## [0.2.2] - 2026-10-15

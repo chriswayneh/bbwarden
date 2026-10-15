@@ -35,3 +35,10 @@ def test_origin_fails_closed_on_unexpected_error(monkeypatch):
     h = bhttp.Http(None, "https://bb.example.com")
     with pytest.raises(bhttp.BBWardenError, match="another host"):
         h.url("https://bb.example.com/next")
+
+
+def test_hostless_urls_never_same_origin():
+    from bbwarden.http import _origin
+
+    assert _origin("file:///x") != _origin("file:///x")
+    assert _origin("file:///x") != _origin("file:///y")
