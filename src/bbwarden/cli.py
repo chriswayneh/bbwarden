@@ -473,10 +473,12 @@ def stdout_to_devnull():
 
 def is_pipe_error(e):
     """A write to stdout failed because its reader is gone. Windows reports a closed
-    pipe as EINVAL, so on stdout that counts too (best effort)."""
-    return isinstance(e, BrokenPipeError) or (
-        isinstance(e, OSError) and e.errno in (errno.EPIPE, errno.EINVAL)
-    )
+    pipe as EINVAL, so there (only) that counts too (best effort)."""
+    if isinstance(e, BrokenPipeError):
+        return True
+    if not isinstance(e, OSError):
+        return False
+    return e.errno == errno.EPIPE or (os.name == "nt" and e.errno == errno.EINVAL)
 
 
 def after_final_flush_break(code):
@@ -485,11 +487,6 @@ def after_final_flush_break(code):
     return (
         code if code in (EXIT_ERROR, EXIT_CONFIG, EXIT_INCOMPLETE) else EXIT_BROKEN_PIPE
     )
-
-
-def broken_pipe_exit():
-    stdout_to_devnull()
-    sys.exit(EXIT_BROKEN_PIPE)
 
 
 def main(argv=None, env=None, **kw):
@@ -511,8 +508,6 @@ def main(argv=None, env=None, **kw):
                 raise
             return after_final_flush_break(code)
         return code
-    except BrokenPipeError:
-        broken_pipe_exit()
     except ConfigError as e:
         print(f"error: {escape(e)}", file=sys.stderr)
         sys.exit(EXIT_CONFIG)
@@ -681,7 +676,9 @@ def _run(args, env, **kw):
     if args.csv:
         try:
             write_csv(rows, args.csv, cols, raw=args.raw_csv)
-        except BrokenPipeError:  # a FIFO or /dev/stdout reader left
+        except OSError as e:  # a FIFO or /dev/stdout reader left
+            if not is_pipe_error(e):
+                raise
             stdout_to_devnull()
             out.broken = True
     # Precedence: 2 (raised earlier), then 1, then 3, then 141, then 0.

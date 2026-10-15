@@ -122,3 +122,51 @@ def test_entry_break_at_final_flush_keeps_a_stronger_code(monkeypatch, rc, want)
     with pytest.raises(SystemExit) as e:
         _entry.run()
     assert e.value.code == want
+
+
+# Reviewer minors at 90dcdc3: EINVAL only on Windows, CSV pipe errors, non-stdout EPIPE
+
+
+@pytest.mark.parametrize(
+    "name,err,want",
+    [
+        ("posix", OSError(22, "Invalid argument"), False),
+        ("nt", OSError(22, "Invalid argument"), True),
+        ("posix", BrokenPipeError(32, "Broken pipe"), True),
+        ("nt", BrokenPipeError(32, "Broken pipe"), True),
+        ("posix", OSError(5, "I/O error"), False),
+    ],
+)
+def test_is_pipe_error_einval_only_on_windows(monkeypatch, name, err, want):
+    from bbwarden import cli
+
+    monkeypatch.setattr(cli.os, "name", name)
+    assert cli.is_pipe_error(err) is want
+
+
+def test_csv_pipe_error_uses_is_pipe_error(monkeypatch, capsys):
+    """Windows reports a gone pipe reader as EINVAL: the CSV step must treat it like
+    EPIPE (exit 141) instead of failing with error: (exit 1)."""
+    from bbwarden import cli
+
+    def einval(*a, **k):
+        raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr(cli.os, "name", "nt")
+    monkeypatch.setattr(cli, "_check_writable", lambda path: None)
+    monkeypatch.setattr(cli, "write_csv", einval)
+    monkeypatch.setattr(cli, "stdout_to_devnull", lambda: None)
+    assert cli.main(["direct", "--demo", "--csv", "x.csv"]) == 141
+
+
+def test_broken_pipe_from_backend_is_an_error_not_141(monkeypatch):
+    from bbwarden import cli
+
+    def load(args, env=None, **kw):
+        raise BrokenPipeError(32, "Broken pipe")
+
+    monkeypatch.setattr(cli, "get_ws", load)
+    with pytest.raises(SystemExit) as e:
+        cli.main(["direct"])
+    assert e.value.code not in (0, 141, None)
+    assert str(e.value.code).startswith("error:")
