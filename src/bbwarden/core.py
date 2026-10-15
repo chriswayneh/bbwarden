@@ -2,6 +2,7 @@
 import csv
 import logging
 
+from .http import BBWardenError
 from .model import RANK, rank
 
 log = logging.getLogger("bbwarden")
@@ -250,9 +251,6 @@ def apply_regroup(ws, plan, backend=None):
 
 def offboard(ws, user, memberships=True):
     plan = []
-    if user in ws.admins:
-        plan.append({"scope": "global", "name": ws.admins[user].split(":", 1)[-1],
-                     "action": "remove global permission", "detail": "ADMIN"})
     for k, p in sorted(ws.projects.items()):
         if user in p["users"]:
             plan.append({"scope": "project", "name": k, "action": "remove direct grant",
@@ -264,6 +262,11 @@ def offboard(ws, user, memberships=True):
     for g, m in sorted(ws.groups.items()):
         if memberships and user in m:
             plan.append({"scope": "group", "name": g, "action": "remove membership", "detail": ""})
+    if user in ws.admins:   # last: may be impossible by API (Cloud owners), so it must not block the rest
+        kind, level = ws.admins[user].split(":", 1)
+        action = ("remove all global permissions" if kind == "global"
+                  else f"remove {kind} {level} (manual on Cloud)")
+        plan.append({"scope": "global", "name": kind, "action": action, "detail": level})
     return plan
 
 
@@ -285,5 +288,15 @@ def apply_offboard(ws, user, plan, backend=None):
         else:
             ws.groups[step["name"]].remove(user)
 
-    return _run_steps([(f"{s['action']} {label(ws, user)}: {s['scope']} {s['name']}", lambda s=s: do(s))
-                       for s in plan])
+    lab = lambda s: f"{s['action']} {label(ws, user)}: {s['scope']} {s['name']}"
+    regular = [s for s in plan if s["scope"] != "global"]
+    done = _run_steps([(lab(s), lambda s=s: do(s)) for s in regular])
+    for s in plan:
+        if s["scope"] == "global":
+            try:
+                do(s)
+                done.append(lab(s))
+            except BBWardenError as e:   # e.g. Cloud owner: no removal API; keep what finished
+                log.warning("manual step needed: %s: %s", lab(s), e)
+                ws.manual.append((lab(s), str(e)))
+    return done

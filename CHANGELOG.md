@@ -20,7 +20,10 @@ All notable changes to bbwarden are listed here. The format follows
 - Tests on mocked HTTP for pagination, retries, auth errors, and both live backends.
 - `who` includes Data Center global `ADMIN`/`SYS_ADMIN` users and groups, Cloud workspace
   owners, and public repos (`(anyone)` row). Parts that need extra rights and cannot be loaded
-  produce a `NOTE:` on stderr. `offboard` plans removal of a Data Center global admin grant.
+  produce a `NOTE:` on stderr. `offboard` removes global permissions as its last step
+  ("remove all global permissions" on Data Center, showing the actual level in DETAIL).
+  If that step cannot be done by API (Cloud workspace owners), it is recorded as a manual
+  step, other removals are kept, and bbwarden exits with status 1.
 - `orphans` reports people with access who are missing from the IdP export.
 
 ### Changed
@@ -30,7 +33,8 @@ All notable changes to bbwarden are listed here. The format follows
 - The version is read from `bbwarden.__version__`.
 - `--idp csv` is strict: unknown `active` values, empty users, duplicates and missing columns
   are rejected with the line number.
-- `--csv` always writes a header row, with command-specific columns.
+- `--csv` always writes a header row, with command-specific columns, and the path is
+  checked for writability before any output. Displayed columns are defined per command.
 - `regroup` says "no granted group" when it can only see groups that hold a grant.
 
 ### Fixed
@@ -39,7 +43,8 @@ All notable changes to bbwarden are listed here. The format follows
 - A grant with an unknown permission name is marked manual instead of being sent back as is.
 - Ambiguous or unknown users are refused by `offboard` instead of guessed.
 - Cloud group listings without a member list now stop the run instead of reading as empty.
-- Missing or unwritable files give a one-line error instead of a traceback.
+- Missing or unwritable files, and OS errors without a file name, give a one-line error
+  instead of a traceback.
 
 ### Security
 - Cloud is detected only for the exact hosts `bitbucket.org` and `api.bitbucket.org`, so a
@@ -48,7 +53,7 @@ All notable changes to bbwarden are listed here. The format follows
 - `BBWARDEN_URL` must be `https://`; plain `http://` only for `localhost` and `127.0.0.1`.
 - 401 and 403 errors name the fix and never print credentials or URL query strings.
 - Non-JSON responses and network errors report no response body or request details.
-- CSV exports neutralize spreadsheet formulas (CSV injection).
+- CSV exports neutralize spreadsheet formulas (CSV injection), also after leading whitespace.
 
 ## [0.1.0] - 2026-10-14
 

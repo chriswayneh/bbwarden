@@ -1,6 +1,7 @@
 import argparse
 import csv
 import logging
+import os
 import sys
 
 from . import __version__, core
@@ -8,9 +9,8 @@ from .http import BBWardenError
 from .live import backend_from_env, crowd_from_env, crowd_status
 from .model import demo_workspace
 
-HIDDEN = {"key"}   # internal fields kept on plan rows but never displayed or exported
-
-
+# Displayed and exported columns per command. Plan rows may carry extra internal fields
+# (regroup keeps the raw user "key" for --apply); they are shown only if listed here.
 COLUMNS = {
     "who": ["repo", "user", "effective", "sources", "flag"],
     "direct": ["scope", "name", "user", "permission"],
@@ -21,20 +21,16 @@ COLUMNS = {
 FORMULA = ("=", "+", "-", "@", "\t", "\r")
 
 
-def columns(rows):
-    return [c for c in rows[0] if c not in HIDDEN]
-
-
 def _safe_cell(v):
-    """Neutralize spreadsheet formulas (CSV injection) by prefixing a single quote."""
+    """Neutralize spreadsheet formulas (CSV injection) by prefixing a single quote,
+    also when the formula follows leading whitespace."""
     v = str(v)
-    return "'" + v if v.startswith(FORMULA) else v
+    return "'" + v if v.startswith(FORMULA) or v.lstrip().startswith(FORMULA[:4]) else v
 
 
-def table(rows):
+def table(rows, cols):
     if not rows:
         return "(no results)"
-    cols = columns(rows)
     w = {c: max(len(c), *(len(str(r[c])) for r in rows)) for c in cols}
     line = lambda r: "  ".join(str(r[c]).ljust(w[c]) for c in cols).rstrip()
     return "\n".join([line({c: c.upper() for c in cols}),
@@ -100,10 +96,23 @@ def main(argv=None, env=None, **kw):
     except (BBWardenError, core.BadIdpFile) as e:
         sys.exit(f"error: {e}")
     except OSError as e:
-        sys.exit(f"error: cannot open {e.filename}: {e.strerror}")
+        if e.filename:
+            sys.exit(f"error: cannot open {e.filename}: {e.strerror or e}")
+        sys.exit(f"error: {e.strerror or e}")
+
+
+def _check_writable(path):
+    """Fail before any output if the CSV path cannot be written. Leaves no new file behind."""
+    existed = os.path.exists(path)
+    with open(path, "a", newline=""):
+        pass
+    if not existed:
+        os.remove(path)
 
 
 def _run(args, env, **kw):
+    if args.csv:
+        _check_writable(args.csv)
     ws, backend = get_ws(args, env, **{k: v for k, v in kw.items() if k != "crowd_session"})
     note = ""
     target = "demo workspace" if args.demo else "Bitbucket"
@@ -143,14 +152,22 @@ def _run(args, env, **kw):
                 note = "DRY RUN: re-run with --apply to make these changes"
     except KeyError as e:
         sys.exit(f"error: {e.args[0]}")
-    print(table(rows))
+    cols = COLUMNS[args.cmd]
+    print(table(rows, cols))
+    if ws.manual:
+        total = len(rows)
+        print(f"\nAPPLY INCOMPLETE: {total - len(ws.manual)} of {total} steps finished. "
+              "MANUAL steps left:")
+        for lab, why in ws.manual:
+            print(f"  MANUAL  {lab}: {why}")
+        note = ""
     if note:
         print(f"\n{note}")
     for n in ws.notes:
         print(f"NOTE: {n}", file=sys.stderr)
     if args.csv:
-        write_csv(rows, args.csv, COLUMNS[args.cmd])
-    return 0
+        write_csv(rows, args.csv, cols)
+    return 1 if ws.manual else 0
 
 
 if __name__ == "__main__":

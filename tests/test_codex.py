@@ -85,8 +85,8 @@ def test_cloud_workspace_owners_and_public():
 def test_offboard_plans_global_admin_removal():
     ws = demo_workspace()
     plan = core.offboard(ws, "root")
-    assert plan == [{"scope": "global", "name": "SYS_ADMIN", "action": "remove global permission",
-                     "detail": "ADMIN"}]
+    assert plan == [{"scope": "global", "name": "global", "action": "remove all global permissions",
+                     "detail": "SYS_ADMIN"}]
     core.apply_offboard(ws, "root", plan)
     assert "root" not in ws.admins
 

@@ -35,7 +35,7 @@ bbwarden offboard dave --demo
 | `direct` | Direct user grants that skip groups |
 | `orphans --idp crowd or csv` | People with access who are disabled in Crowd or an IdP CSV export (`--idp-file`, columns `user,active`), plus people the export does not list (`missing`) |
 | `regroup <repo> [--apply]` | Plan replacing direct grants with group grants |
-| `offboard <user> [--apply] [--skip-memberships]` | Plan removing a user's direct repo and project grants, group memberships, and Data Center global admin permission |
+| `offboard <user> [--apply] [--skip-memberships]` | Plan removing a user's direct repo and project grants, group memberships, and global permissions (last) |
 
 ## What `who` covers
 
@@ -57,8 +57,12 @@ Loading global admins needs Data Center system admin rights; loading Cloud works
 needs workspace admin rights. Without them bbwarden keeps going and prints a `NOTE:` to stderr
 saying that part was not loaded, so the result may be incomplete.
 
-On Cloud, workspace owners cannot be removed by API, so `offboard --apply` stops at that step
-and tells you to remove them in Workspace settings.
+`offboard` runs the global step last. On Data Center it is "remove all global permissions"
+(one API call that drops every global permission the user holds), and DETAIL shows the
+user's actual level, for example `SYS_ADMIN` or `ADMIN`. On Cloud, workspace owners cannot be
+removed by API: the step is recorded as MANUAL, every other removal still runs, bbwarden
+prints which steps finished and which are left, and exits with status 1. Remove the owner in
+Workspace settings.
 
 ## Live use
 
@@ -129,7 +133,9 @@ duplicate users are rejected with the line number. People with access who are no
 are reported as `missing`, so a partial export cannot look clean.
 
 `--csv` always writes a header row, even with no results, and prefixes cells starting with
-`=`, `+`, `-`, `@`, tab or carriage return with `'` so spreadsheets do not run them as formulas.
+`=`, `+`, `-`, `@`, tab or carriage return (also after leading whitespace) with `'` so
+spreadsheets do not run them as formulas. The CSV path is checked for writability before
+anything is printed.
 
 ## Sample output
 

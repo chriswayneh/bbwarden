@@ -17,6 +17,7 @@ class Workspace:
     admins: dict = field(default_factory=dict)      # user -> source, e.g. "global:SYS_ADMIN"
     admin_groups: dict = field(default_factory=dict)  # group -> source
     notes: list = field(default_factory=list)       # gaps in what could be loaded
+    manual: list = field(default_factory=list)      # apply steps that must be done by hand
 
 
 def demo_workspace():
