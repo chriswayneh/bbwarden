@@ -94,15 +94,9 @@ def test_log_lines_escaped(caplog, monkeypatch, capsys):
 )
 def test_csv_formula_after_control_or_format_chars(v, tmp_path):
     p = tmp_path / "o.csv"
-    cli.write_csv([{"user": v}], p, ["user"])
-    cell = list(csv.reader(p.open()))[1][0]
+    cli.write_csv([{"user": v}], p, ["user"], raw=True)
+    cell = list(csv.reader(p.open(encoding="utf-8")))[1][0]
     assert cell == "'" + v
-
-
-def test_csv_keeps_data_unescaped(tmp_path):
-    p = tmp_path / "o.csv"
-    cli.write_csv([{"user": BIDI}], p, ["user"])
-    assert list(csv.reader(p.open(encoding="utf-8")))[1][0] == BIDI
 
 
 def test_requests_floor():

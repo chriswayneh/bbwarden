@@ -214,15 +214,24 @@ class Parser(argparse.ArgumentParser):
         self.exit(2, f"{self.prog}: error: {escape(message)}\n")
 
 
-def _safe_cell(v):
-    """Neutralize spreadsheet formulas (CSV injection) by prefixing a single quote, also when
-    the formula follows leading whitespace or invisible control and format characters (for
-    example \\u200b or \\x1b). The data itself is kept as is."""
+def _no_surrogates(v):
+    """Lone surrogates (Cs) cannot be encoded as UTF-8; escape them even in raw CSV."""
+    return "".join(escape(c) if unicodedata.category(c) == "Cs" else c for c in v)
+
+
+def _safe_cell(v, raw=False):
+    """One CSV cell. By default escaped like terminal output (escape()), so a CSV opened in
+    a terminal or viewer never carries raw control, bidi or separator characters. With
+    raw=True the data is kept except lone surrogates. Either way spreadsheet formulas are
+    neutralized with a leading single quote, also behind leading whitespace or invisible
+    control and format characters (for example \\u200b or \\x1b)."""
     v = str(v)
     lead = v
     while lead and (lead[0].isspace() or _is_control(lead[0])):
         lead = lead[1:]
-    return "'" + v if v.startswith(FORMULA) or lead.startswith(FORMULA[:4]) else v
+    guard = v.startswith(FORMULA) or lead.startswith(FORMULA[:4])
+    v = _no_surrogates(v) if raw else escape(v)
+    return "'" + v if guard or v.startswith(FORMULA) else v
 
 
 def table(rows, cols):
@@ -239,12 +248,12 @@ def table(rows, cols):
     )
 
 
-def write_csv(rows, path, cols):
-    """Always writes the header, even with no rows."""
-    with open(path, "w", newline="") as f:
+def write_csv(rows, path, cols, raw=False):
+    """UTF-8, always with the header row, even with no rows. See _safe_cell for raw."""
+    with open(path, "w", newline="", encoding="utf-8") as f:
         wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         wr.writeheader()
-        wr.writerows({c: _safe_cell(r.get(c, "")) for c in cols} for r in rows)
+        wr.writerows({c: _safe_cell(r.get(c, ""), raw) for c in cols} for r in rows)
 
 
 def get_ws(args, env=None, **kw):
@@ -262,6 +271,11 @@ def build_parser():
         "--demo", action="store_true", help="use built-in mock workspace"
     )
     common.add_argument("--csv", metavar="OUT", help="also write results to CSV")
+    common.add_argument(
+        "--raw-csv",
+        action="store_true",
+        help="keep control and format characters in CSV cells instead of escaping them",
+    )
     common.add_argument(
         "--insecure",
         action="store_true",
@@ -332,6 +346,15 @@ def main(argv=None, env=None, **kw):
                 f"error: cannot open {escape(e.filename)}: {escape(e.strerror or e)}"
             )
         sys.exit(f"error: {escape(e.strerror or e)}")
+    except Exception as e:  # noqa: BLE001 - last resort: never a raw traceback
+        print("error: unexpected internal error; details follow", file=sys.stderr)
+        try:
+            lines = _exc_lines(e)
+        except (Exception, RecursionError):  # noqa: BLE001
+            lines = [escape(f"{type(e).__name__}: <traceback unavailable>")]
+        for ln in lines:
+            print(ln, file=sys.stderr)
+        sys.exit(EXIT_ERROR)
 
 
 def _check_writable(path):
@@ -346,6 +369,12 @@ def _check_writable(path):
 def _run(args, env, **kw):
     if args.csv:
         _check_writable(args.csv)
+        if args.raw_csv:
+            print(
+                "WARNING: --raw-csv: CSV cells keep control and format characters "
+                "(terminal escapes, bidi overrides); open the file with care",
+                file=sys.stderr,
+            )
     ws, backend = get_ws(
         args, env, **{k: v for k, v in kw.items() if k != "crowd_session"}
     )
@@ -360,7 +389,14 @@ def _run(args, env, **kw):
             if args.idp == "csv":
                 if not args.idp_file:
                     raise ConfigError("--idp csv needs --idp-file")
-                status = core.load_idp_csv(args.idp_file)
+                try:
+                    status = core.load_idp_csv(args.idp_file)
+                except UnicodeError as e:
+                    where = f" at byte {e.start}" if hasattr(e, "start") else ""
+                    raise ConfigError(
+                        f"--idp-file {args.idp_file} is not valid UTF-8{where}; "
+                        "export it as UTF-8"
+                    ) from None
             elif args.demo:
                 status = {u: v["active"] for u, v in ws.users.items()}
             else:
@@ -415,7 +451,7 @@ def _run(args, env, **kw):
     for n in ws.notes:
         print(f"NOTE: {escape(n)}", file=sys.stderr)
     if args.csv:
-        write_csv(rows, args.csv, cols)
+        write_csv(rows, args.csv, cols, raw=args.raw_csv)
     return 1 if ws.manual else 0
 
 
