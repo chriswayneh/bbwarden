@@ -69,14 +69,19 @@ IDEMPOTENT = ("GET", "HEAD", "OPTIONS", "PUT", "DELETE")
 
 
 def _idna_host(host):
-    """Hostname in ASCII via IDNA2008/UTS46 (the idna package, same as requests), so
-    https://bücher.example and the punycoded https://xn--bcher-kva.example that requests
-    reports compare equal, while hosts that only IDNA2003 would merge (faß vs fass, ς vs σ)
-    stay different. IPv6 literals pass through lowercased. A name that cannot be encoded
-    (for example an empty or over-long label) returns a fresh object() that equals nothing,
-    so it is never treated as the same origin."""
+    """Hostname as requests sends it, for origin comparison.
+
+    Pure-ASCII hosts are compared case-insensitively, unchanged otherwise: requests sends
+    them as is, including names IDNA would reject (bitbucket_server, my_host.internal).
+    Punycode labels (xn--...) are ASCII too, so they are compared as written.
+
+    Non-ASCII hosts are encoded with IDNA2008/UTS46 (the idna package, as requests does),
+    so https://bücher.example matches the punycoded https://xn--bcher-kva.example that
+    requests reports, while hosts that only IDNA2003 would merge (faß vs fass, ς vs σ) stay
+    different. A non-ASCII name that cannot be encoded returns a fresh object() that equals
+    nothing, so it is never treated as the same origin. IPv6 literals are ASCII."""
     host = host.lower()
-    if not host or ":" in host:
+    if host.isascii():
         return host
     try:
         return idna.encode(host, uts46=True).decode("ascii")

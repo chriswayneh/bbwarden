@@ -47,7 +47,7 @@ def test_url_link_check_idn_other_host_refused():
 
 
 def test_invalid_idna_host_never_same_origin():
-    bad = "https://" + "a" * 64 + ".example"  # label too long for IDNA
+    bad = "https://\u00fc" + "a" * 63 + ".example"  # non-ASCII label too long for IDNA
     assert _origin(bad) != _origin(bad)
     with pytest.raises(BBWardenError, match="another host"):
         http(bad, {}).url(bad + "/next")

@@ -8,11 +8,12 @@ All notable changes to bbwarden are listed here. The format follows
 
 ### Fixed
 - IDN hosts (for example `BBWARDEN_URL=https://bücher.example`) are no longer refused as
-  cross-host: the origin check compares hostnames encoded with IDNA2008/UTS46 (the `idna`
-  package, same as requests), so the punycoded final URL that requests reports matches,
-  while hosts that only IDNA2003 would merge (`faß` and `fass`, `ς` and `σ`) stay
-  different. A hostname that cannot be encoded is never treated as the same origin.
-  `idna>=2.5,<4` is now a direct dependency.
+  cross-host. For the origin check, non-ASCII hostnames are encoded with IDNA2008/UTS46
+  (the `idna` package, like requests), so the punycoded final URL that requests reports
+  matches, while hosts that only IDNA2003 would merge (`faß` and `fass`, `ς` and `σ`) stay
+  different. ASCII hostnames, including punycode and names such as `bitbucket_server`, are
+  compared case-insensitively as requests sends them. A non-ASCII hostname that cannot be
+  encoded is never treated as the same origin. `idna>=2.5,<4` is now a direct dependency.
 
 ## [0.2.2] - 2026-10-15
 
