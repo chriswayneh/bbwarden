@@ -11,7 +11,7 @@ commands are dry-run plans unless you pass `--apply`.
 
 ```
 pip install -e .
-bbwarden --version    # bbwarden 0.2.0
+bbwarden --version    # bbwarden 0.2.1
 ```
 
 ## Quick start (no Bitbucket needed)
@@ -72,11 +72,11 @@ Set credentials in the environment (never on the command line):
 
 | Variable | Meaning |
 | --- | --- |
-| `BBWARDEN_URL` | `https://bitbucket.org` for Cloud, or your Data Center base URL. Must be `https://`. |
+| `BBWARDEN_URL` | `https://bitbucket.org` for Cloud, or your Data Center base URL. Must be `https://` (see `--insecure`). |
 | `BBWARDEN_USER` | Username (Cloud: account username or email; Data Center: user or service account) |
 | `BBWARDEN_TOKEN` | Cloud app password or API token; Data Center HTTP access token or password |
 | `BBWARDEN_WORKSPACE` | Cloud only: workspace slug |
-| `CROWD_URL`, `CROWD_APP`, `CROWD_PASSWORD` | `--idp crowd` only: Crowd base URL and application credentials |
+| `CROWD_URL`, `CROWD_APP`, `CROWD_APP_PASSWORD` | `--idp crowd` only: Crowd base URL and application credentials. The old name `CROWD_PASSWORD` still works and prints a deprecation warning when it is used. If both are set, `CROWD_APP_PASSWORD` is used and a note says `CROWD_PASSWORD` is ignored. |
 
 Read commands need admin read on the projects and repos you scan (Data Center user
 status also needs system admin read). `--apply` needs admin write.
@@ -109,7 +109,19 @@ Hardening:
   `offboard` accepts an account_id or a nickname; a nickname shared by several accounts is
   refused, so pass the account_id.
 - Cloud is detected only when the `BBWARDEN_URL` hostname is exactly `bitbucket.org` or
-  `api.bitbucket.org`. Plain `http://` is allowed only for `localhost` and `127.0.0.1`.
+  `api.bitbucket.org`.
+- `BBWARDEN_URL` and `CROWD_URL` must be `https://` for every host, loopback included.
+  `--insecure` allows `http://` for a local test server and prints a warning on stderr.
+  There is no automatic localhost exception, so plain http is always an explicit choice.
+  A URL that is not a valid URL (for example `https://[::1`) or has no hostname
+  (`https://`, `https:x`) is refused.
+- A `BBWARDEN_URL` or `CROWD_URL` with embedded credentials (`https://user:pass@host`), a query
+  string or a fragment is refused with exit code 2; put them in `BBWARDEN_USER`/`BBWARDEN_TOKEN` or
+  `CROWD_APP`/`CROWD_APP_PASSWORD`. Messages show URLs as scheme, host, port and path only:
+  userinfo, query strings and fragments are always dropped.
+- Redirects are never followed. A 3xx response stops the run with
+  `error: redirect refused: <status> to <host> ...`, naming only the status and the target
+  host (never the path or query); set the URL to the final `https://` address.
 - Pagination links must match the base URL scheme, host and port.
 - Rate-limit retries apply only to idempotent methods (GET, PUT, DELETE). A POST that gets
   429 or 503 is not retried; check the state and re-run.
@@ -210,11 +222,28 @@ DRY RUN: re-run with --apply to make these changes
 
 ```
 pip install -e ".[dev]"
+ruff format --check .
 ruff check .
+mypy src
 pytest -q
 ```
 
 Tests run offline against demo data and a mocked HTTP session.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success (including dry runs) |
+| 1 | Runtime error: Bitbucket or Crowd error, unknown repo or user, bad IdP file, file error, an `--apply` that stopped partway, or an `offboard --apply` with MANUAL steps left |
+| 2 | Configuration or usage error: http refused, URL that is not a valid URL, has no hostname, or contains embedded credentials, a query string or a fragment, missing variable (for example `BBWARDEN_TOKEN`, `BBWARDEN_WORKSPACE`, Crowd credentials), `--idp csv` without `--idp-file`, or invalid arguments |
+
+Errors are printed to stderr as `error: ...`.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately, supported
+versions and the security design.
 
 ## License
 

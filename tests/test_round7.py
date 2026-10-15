@@ -1,4 +1,5 @@
 """Tests for review fixes on 71946fb."""
+
 import pytest
 
 from bbwarden import cli, core
@@ -46,7 +47,9 @@ def test_global_failure_becomes_manual(monkeypatch, capsys):
     assert rc == 1
     assert be.calls == [("repo", "api"), ("group", "ops"), ("global", "root")]
     assert "root" not in ws.repos["api"]["users"] and "root" not in ws.groups["ops"]
-    assert "2 of 3 steps finished" in out and "MANUAL" in out and "no API to remove" in out
+    assert (
+        "2 of 3 steps finished" in out and "MANUAL" in out and "no API to remove" in out
+    )
 
 
 # (2)(3) wording and actual level
@@ -54,7 +57,9 @@ def test_global_step_wording_and_level():
     ws = demo_workspace()
     ws.admins["root"] = "global:ADMIN"
     step = core.offboard(ws, "root")[-1]
-    assert step["action"] == "remove all global permissions" and step["detail"] == "ADMIN"
+    assert (
+        step["action"] == "remove all global permissions" and step["detail"] == "ADMIN"
+    )
     assert core.offboard(demo_workspace(), "root")[-1]["detail"] == "SYS_ADMIN"
 
 
@@ -62,6 +67,7 @@ def test_global_step_wording_and_level():
 def test_oserror_without_filename(monkeypatch):
     def boom(*a):
         raise OSError(28, "No space left on device")
+
     monkeypatch.setattr(core, "direct", boom)
     with pytest.raises(SystemExit) as e:
         cli.main(["direct", "--demo"])
@@ -76,7 +82,9 @@ def test_unwritable_csv_checked_before_table(capsys, tmp_path):
 
 def test_csv_check_leaves_no_file_on_failure(tmp_path, monkeypatch):
     out = tmp_path / "o.csv"
-    monkeypatch.setattr(core, "direct", lambda ws: (_ for _ in ()).throw(core.UnknownUser("x")))
+    monkeypatch.setattr(
+        core, "direct", lambda ws: (_ for _ in ()).throw(core.UnknownUser("x"))
+    )
     with pytest.raises(SystemExit):
         cli.main(["direct", "--demo", "--csv", str(out)])
     assert not out.exists()

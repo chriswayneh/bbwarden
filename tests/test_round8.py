@@ -1,4 +1,5 @@
 """Tests for review fixes on 666260e."""
+
 import pytest
 
 from bbwarden import cli, core, live
@@ -42,7 +43,9 @@ def run(monkeypatch, be, ws=None):
 def test_partial_failure_lists_global_step_as_not_run():
     ws = ws_root()
     with pytest.raises(core.PartialApply) as e:
-        core.apply_offboard(ws, "root", core.offboard(ws, "root"), Backend(fail_regular=True))
+        core.apply_offboard(
+            ws, "root", core.offboard(ws, "root"), Backend(fail_regular=True)
+        )
     assert any("remove all global permissions" in p for p in e.value.pending)
 
 
@@ -51,7 +54,10 @@ def test_cli_partial_failure_prints_global_not_run(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         cli.main(["offboard", "root", "--apply"])
     err = capsys.readouterr().err
-    assert "0 of 2 steps finished" in err and "not run remove all global permissions" in err
+    assert (
+        "0 of 2 steps finished" in err
+        and "not run remove all global permissions" in err
+    )
 
 
 def test_cloud_remove_global_raises_manualstep():
@@ -59,20 +65,31 @@ def test_cloud_remove_global_raises_manualstep():
         live.CloudBackend(None, "acme").remove_global("x")
 
 
-@pytest.mark.parametrize("exc", [AuthError("403 Forbidden on DELETE x", 403),
-                                 BBWardenError("HTTP 503 on DELETE x", 503),
-                                 BBWardenError("network error on DELETE x: ConnectionError")])
+@pytest.mark.parametrize(
+    "exc",
+    [
+        AuthError("403 Forbidden on DELETE x", 403),
+        BBWardenError("HTTP 503 on DELETE x", 503),
+        BBWardenError("network error on DELETE x: ConnectionError"),
+    ],
+)
 def test_other_global_errors_are_partial_failures(monkeypatch, capsys, exc):
     ws = run(monkeypatch, Backend(global_exc=exc))
     with pytest.raises(SystemExit):
         cli.main(["offboard", "root", "--apply"])
     err = capsys.readouterr().err
-    assert "1 of 2 steps finished" in err and "FAILED  remove all global permissions" in err
+    assert (
+        "1 of 2 steps finished" in err
+        and "FAILED  remove all global permissions" in err
+    )
     assert ws.manual == []
 
 
 def test_manual_summary_on_stderr(monkeypatch, capsys):
-    run(monkeypatch, Backend(global_exc=live.ManualStep("no API to remove a workspace owner")))
+    run(
+        monkeypatch,
+        Backend(global_exc=live.ManualStep("no API to remove a workspace owner")),
+    )
     assert cli.main(["offboard", "root", "--apply"]) == 1
     cap = capsys.readouterr()
     assert "MANUAL" in cap.err and "1 of 2 steps finished" in cap.err

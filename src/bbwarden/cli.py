@@ -5,7 +5,7 @@ import os
 import sys
 
 from . import __version__, core
-from .http import BBWardenError
+from .http import BBWardenError, ConfigError
 from .live import backend_from_env, crowd_from_env, crowd_status
 from .model import demo_workspace
 
@@ -33,8 +33,10 @@ def table(rows, cols):
         return "(no results)"
     w = {c: max(len(c), *(len(str(r[c])) for r in rows)) for c in cols}
     line = lambda r: "  ".join(str(r[c]).ljust(w[c]) for c in cols).rstrip()
-    return "\n".join([line({c: c.upper() for c in cols}),
-                      "  ".join("-" * w[c] for c in cols)] + [line(r) for r in rows])
+    return "\n".join(
+        [line({c: c.upper() for c in cols}), "  ".join("-" * w[c] for c in cols)]
+        + [line(r) for r in rows]
+    )
 
 
 def write_csv(rows, path, cols):
@@ -48,51 +50,82 @@ def write_csv(rows, path, cols):
 def get_ws(args, env=None, **kw):
     if args.demo:
         return demo_workspace(), None
-    backend = backend_from_env(env, **kw)
+    backend = backend_from_env(env, insecure=getattr(args, "insecure", False), **kw)
     return backend.load(), backend
 
 
 def build_parser():
-    p = argparse.ArgumentParser(prog="bbwarden", description="Bitbucket least-privilege and offboarding")
+    p = argparse.ArgumentParser(
+        prog="bbwarden", description="Bitbucket least-privilege and offboarding"
+    )
     p.add_argument("--version", action="version", version=f"bbwarden {__version__}")
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--demo", action="store_true", help="use built-in mock workspace")
+    common.add_argument(
+        "--demo", action="store_true", help="use built-in mock workspace"
+    )
     common.add_argument("--csv", metavar="OUT", help="also write results to CSV")
+    common.add_argument(
+        "--insecure",
+        action="store_true",
+        help="allow http:// for BBWARDEN_URL and CROWD_URL (local test servers only)",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("who", parents=[common], help="effective access per person")
     s.add_argument("target", help="repo slug or project key")
-    sub.add_parser("direct", parents=[common], help="direct user grants that skip groups")
-    s = sub.add_parser("orphans", parents=[common], help="access held by disabled identities")
+    sub.add_parser(
+        "direct", parents=[common], help="direct user grants that skip groups"
+    )
+    s = sub.add_parser(
+        "orphans", parents=[common], help="access held by disabled identities"
+    )
     s.add_argument("--idp", choices=["crowd", "csv"], required=True)
     s.add_argument("--idp-file", help="IdP CSV export (user,active) for --idp csv")
-    s = sub.add_parser("regroup", parents=[common], help="replace direct grants with group grants")
+    s = sub.add_parser(
+        "regroup", parents=[common], help="replace direct grants with group grants"
+    )
     s.add_argument("repo")
     s.add_argument("--apply", action="store_true")
     s = sub.add_parser("offboard", parents=[common], help="remove a user everywhere")
     s.add_argument("user", help="username (Data Center) or account_id/nickname (Cloud)")
     s.add_argument("--apply", action="store_true")
-    s.add_argument("--skip-memberships", action="store_true",
-                   help="only remove direct grants; leave group memberships to your directory")
+    s.add_argument(
+        "--skip-memberships",
+        action="store_true",
+        help="only remove direct grants; leave group memberships to your directory",
+    )
     return p
+
+
+EXIT_OK, EXIT_ERROR, EXIT_CONFIG = 0, 1, 2  # 2 also covers argparse usage errors
 
 
 def main(argv=None, env=None, **kw):
     args = build_parser().parse_args(argv)
     if not logging.getLogger("bbwarden").handlers:
-        logging.basicConfig(level=logging.WARNING, format="bbwarden: %(levelname)s %(message)s")
+        logging.basicConfig(
+            level=logging.WARNING, format="bbwarden: %(levelname)s %(message)s"
+        )
     try:
         return _run(args, env, **kw)
+    except ConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(EXIT_CONFIG)
     except core.PartialApply as e:
         total = len(e.done) + 1 + len(e.pending)
-        print(f"\nAPPLY STOPPED: {len(e.done)} of {total} steps finished before a failure.",
-              file=sys.stderr)
+        print(
+            f"\nAPPLY STOPPED: {len(e.done)} of {total} steps finished before a failure.",
+            file=sys.stderr,
+        )
         for d in e.done:
             print(f"  done    {d}", file=sys.stderr)
         print(f"  FAILED  {e.failed}", file=sys.stderr)
         for p in e.pending:
             print(f"  not run {p}", file=sys.stderr)
-        print("Re-run the same command (without --apply first) to see what is left.", file=sys.stderr)
-        sys.exit(f"error: {e.error}")
+        print(
+            "Re-run the same command (without --apply first) to see what is left.",
+            file=sys.stderr,
+        )
+        sys.exit(f"error: {core.describe_error(e.error)}")
     except (BBWardenError, core.BadIdpFile) as e:
         sys.exit(f"error: {e}")
     except OSError as e:
@@ -113,7 +146,9 @@ def _check_writable(path):
 def _run(args, env, **kw):
     if args.csv:
         _check_writable(args.csv)
-    ws, backend = get_ws(args, env, **{k: v for k, v in kw.items() if k != "crowd_session"})
+    ws, backend = get_ws(
+        args, env, **{k: v for k, v in kw.items() if k != "crowd_session"}
+    )
     note = ""
     target = "demo workspace" if args.demo else "Bitbucket"
     try:
@@ -124,14 +159,25 @@ def _run(args, env, **kw):
         elif args.cmd == "orphans":
             if args.idp == "csv":
                 if not args.idp_file:
-                    sys.exit("error: --idp csv needs --idp-file")
+                    raise ConfigError("--idp csv needs --idp-file")
                 status = core.load_idp_csv(args.idp_file)
             elif args.demo:
                 status = {u: v["active"] for u, v in ws.users.items()}
             else:
-                http_kw = {k: v for k, v in kw.items() if k not in ("session_factory", "crowd_session")}
-                crowd = crowd_from_env(env, session_factory=kw.get("crowd_session"), **http_kw)
-                status = crowd_status(crowd, sorted({v.get('name') or u for u, v in ws.users.items()}))
+                http_kw = {
+                    k: v
+                    for k, v in kw.items()
+                    if k not in ("session_factory", "crowd_session")
+                }
+                crowd = crowd_from_env(
+                    env,
+                    session_factory=kw.get("crowd_session"),
+                    insecure=args.insecure,
+                    **http_kw,
+                )
+                status = crowd_status(
+                    crowd, sorted({v.get("name") or u for u, v in ws.users.items()})
+                )
             rows = core.orphans(ws, status)
         elif args.cmd == "regroup":
             rows = core.regroup(ws, args.repo)
@@ -156,8 +202,11 @@ def _run(args, env, **kw):
     print(table(rows, cols))
     if ws.manual:
         total = len(rows)
-        print(f"\nAPPLY INCOMPLETE: {total - len(ws.manual)} of {total} steps finished. "
-              "MANUAL steps left:", file=sys.stderr)
+        print(
+            f"\nAPPLY INCOMPLETE: {total - len(ws.manual)} of {total} steps finished. "
+            "MANUAL steps left:",
+            file=sys.stderr,
+        )
         for lab, why in ws.manual:
             print(f"  MANUAL  {lab}: {why}", file=sys.stderr)
         note = ""

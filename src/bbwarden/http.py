@@ -1,8 +1,11 @@
 """HTTP layer: retries with backoff, pagination, and safe auth errors."""
+
 import random
 import time
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
+
+import requests
 
 RETRY_STATUS = (429, 503)
 
@@ -15,12 +18,20 @@ class BBWardenError(Exception):
         self.status = status
 
 
-class ManualStep(BBWardenError):
-    """The step cannot be done by API and must be done by hand (e.g. Cloud workspace owner)."""
+class ConfigError(BBWardenError):
+    """Bad or missing configuration (environment, URL). The CLI exits with code 2."""
 
 
 class AuthError(BBWardenError):
     pass
+
+
+class MissingConfig(ConfigError, AuthError):
+    """A required credential or setting is not set."""
+
+
+class ManualStep(BBWardenError):
+    """The step cannot be done by API and must be done by hand (e.g. Cloud workspace owner)."""
 
 
 def _retry_after(resp):
@@ -37,8 +48,20 @@ def _retry_after(resp):
 
 
 def _safe_url(url):
-    """Drop query string, which could carry tokens."""
-    return url.split("?", 1)[0]
+    """URL for messages: scheme, host, port and path only. Userinfo, query and fragment can
+    carry credentials or tokens, so they are dropped. IPv6 hosts keep their brackets."""
+    try:
+        u = urlsplit(url)
+        host = u.hostname or ""
+        port = u.port
+    except ValueError:
+        return "<invalid URL>"
+    if u.scheme and not u.netloc:  # 'https:u:p@h' would otherwise echo its path
+        return "<invalid URL>"
+    if ":" in host:
+        host = f"[{host}]"
+    netloc = f"{host}:{port}" if port is not None else host
+    return f"{u.scheme}://{netloc}{u.path}" if u.scheme else f"{netloc}{u.path}"
 
 
 IDEMPOTENT = ("GET", "HEAD", "OPTIONS", "PUT", "DELETE")
@@ -48,12 +71,37 @@ def _origin(url):
     """(scheme, hostname, port) with default ports filled in."""
     u = urlsplit(url)
     scheme = u.scheme.lower()
-    return scheme, (u.hostname or "").lower(), u.port or {"https": 443, "http": 80}.get(scheme)
+    return (
+        scheme,
+        (u.hostname or "").lower(),
+        u.port or {"https": 443, "http": 80}.get(scheme),
+    )
+
+
+def _redirect_error(status, location, where):
+    """Status and target hostname only: never the path, query or credentials."""
+    host = urlsplit(location or "").hostname or "unknown host"
+    head = (
+        f"redirect refused: {status} to {host}"
+        if status
+        else f"redirect refused to {host}"
+    )
+    return BBWardenError(
+        f"{head} on {where}; set the URL to the final https:// address", status
+    )
 
 
 class Http:
-    def __init__(self, session, base_url, max_retries=5, base_delay=1.0, max_delay=60.0,
-                 sleep=time.sleep, timeout=30):
+    def __init__(
+        self,
+        session,
+        base_url,
+        max_retries=5,
+        base_delay=1.0,
+        max_delay=60.0,
+        sleep=time.sleep,
+        timeout=30,
+    ):
         self.session = session
         self.base = base_url.rstrip("/")
         self.max_retries = max_retries
@@ -65,41 +113,89 @@ class Http:
     def url(self, path):
         if path.startswith(("http://", "https://")):
             if _origin(path) != _origin(self.base):
-                raise BBWardenError(f"refusing to follow link to another host: {_safe_url(path)}")
+                raise BBWardenError(
+                    f"refusing to follow link to another host: {_safe_url(path)}"
+                )
             return path
         return f"{self.base}/{path.lstrip('/')}"
 
     def request(self, method, path, **kw):
         url = self.url(path)
         kw.setdefault("timeout", self.timeout)
+        kw["allow_redirects"] = (
+            False  # never follow: a redirect could carry credentials elsewhere
+        )
         for attempt in range(self.max_retries + 1):
             try:
                 resp = self.session.request(method, url, **kw)
+            except requests.TooManyRedirects as e:
+                # Sessions have max_redirects=0, so a redirect seen by requests itself lands here.
+                r = e.response
+                status = r.status_code if r is not None else None
+                loc = r.headers.get("Location", "") if r is not None else ""
+                raise _redirect_error(
+                    status, loc, f"{method} {_safe_url(url)}"
+                ) from None
             except OSError as e:  # requests exceptions subclass IOError
-                raise BBWardenError(f"network error on {method} {_safe_url(url)}: "
-                                    f"{type(e).__name__}") from None
-            if (resp.status_code in RETRY_STATUS and attempt < self.max_retries
-                    and method.upper() in IDEMPOTENT):
+                raise BBWardenError(
+                    f"network error on {method} {_safe_url(url)}: {type(e).__name__}"
+                ) from None
+            if (
+                resp.status_code in RETRY_STATUS
+                and attempt < self.max_retries
+                and method.upper() in IDEMPOTENT
+            ):
                 delay = _retry_after(resp)
                 if delay is None:
-                    delay = self.base_delay * (2 ** attempt) + random.uniform(0, self.base_delay)  # nosec B311 jitter for backoff timing, not security
+                    jitter = random.uniform(0, self.base_delay)  # nosec B311 backoff jitter, not security
+                    delay = self.base_delay * (2**attempt) + jitter
                 self.sleep(min(delay, self.max_delay))
                 continue
             break
         code = resp.status_code
         where = f"{method} {_safe_url(url)}"
+        history = getattr(resp, "history", None)
+        final = getattr(resp, "url", None)
+        if (
+            300 <= code < 400
+            or history
+            or (isinstance(final, str) and final and _origin(final) != _origin(url))
+        ):
+            loc = (
+                resp.headers.get("Location")
+                or (final if isinstance(final, str) else "")
+                or ""
+            )
+            shown = (
+                code
+                if 300 <= code < 400
+                else history[0].status_code
+                if history
+                else code
+            )
+            raise _redirect_error(shown, loc, where)
         if code == 401:
-            raise AuthError(f"401 Unauthorized on {where}: check BBWARDEN_USER and BBWARDEN_TOKEN "
-                            "(Cloud: app password or API token; Data Center: HTTP access token)", 401)
+            raise AuthError(
+                f"401 Unauthorized on {where}: check BBWARDEN_USER and BBWARDEN_TOKEN "
+                "(Cloud: app password or API token; Data Center: HTTP access token)",
+                401,
+            )
         if code == 403:
-            raise AuthError(f"403 Forbidden on {where}: the credentials work but lack permission "
-                            "(needs project/repo admin read; --apply needs admin write)", 403)
+            raise AuthError(
+                f"403 Forbidden on {where}: the credentials work but lack permission "
+                "(needs project/repo admin read; --apply needs admin write)",
+                403,
+            )
         if code in RETRY_STATUS:
             if method.upper() not in IDEMPOTENT:
-                raise BBWardenError(f"{code} on {where}: not retried because {method} is not "
-                                    "idempotent; check the current state, then re-run")
-            raise BBWardenError(f"{code} on {where}: still rate limited after "
-                                f"{self.max_retries} retries; try again later")
+                raise BBWardenError(
+                    f"{code} on {where}: not retried because {method} is not "
+                    "idempotent; check the current state, then re-run"
+                )
+            raise BBWardenError(
+                f"{code} on {where}: still rate limited after "
+                f"{self.max_retries} retries; try again later"
+            )
         if code >= 400:
             raise BBWardenError(f"HTTP {code} on {where}", code)
         return resp
@@ -109,9 +205,11 @@ class Http:
         try:
             return resp.json()
         except ValueError:
-            raise BBWardenError(f"HTTP {resp.status_code} on GET {_safe_url(self.url(path))}: "
-                                "response was not JSON (check BBWARDEN_URL points at the "
-                                "Bitbucket base URL)") from None
+            raise BBWardenError(
+                f"HTTP {resp.status_code} on GET {_safe_url(self.url(path))}: "
+                "response was not JSON (check BBWARDEN_URL points at the "
+                "Bitbucket base URL)"
+            ) from None
 
     def paginate(self, path, params=None):
         """Yield items across pages. Handles Cloud (next) and Data Center (isLastPage)."""
@@ -121,13 +219,13 @@ class Http:
         while True:
             data = self.get(url, params=params)
             yield from data.get("values", [])
-            if "next" in data or "isLastPage" not in data:   # Cloud style
+            if "next" in data or "isLastPage" not in data:  # Cloud style
                 nxt = data.get("next")
                 if not nxt or nxt in seen:
                     return
                 seen.add(nxt)
-                url, params = nxt, None                   # next URL already carries params
-            else:                                         # Data Center style
+                url, params = nxt, None  # next URL already carries params
+            else:  # Data Center style
                 if data.get("isLastPage", True) or data.get("nextPageStart") is None:
                     return
                 start = data["nextPageStart"]

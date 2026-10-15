@@ -1,4 +1,5 @@
 """Tests for the second independent review of harden-live."""
+
 from pathlib import Path
 
 import pytest
@@ -15,34 +16,61 @@ ENV = {"BBWARDEN_USER": "u", "BBWARDEN_TOKEN": "t", "BBWARDEN_WORKSPACE": "acme"
 
 def kind(url):
     seen = []
-    backend_from_env({**ENV, "BBWARDEN_URL": url}, session_factory=lambda *a: seen.append(a) or None)
+    backend_from_env(
+        {**ENV, "BBWARDEN_URL": url}, session_factory=lambda *a: seen.append(a) or None
+    )
     return seen[0][3]
 
 
 # 1 Cloud detection by exact hostname
-@pytest.mark.parametrize("url,cloud", [
-    ("https://bitbucket.org", True), ("https://api.bitbucket.org/", True),
-    ("https://BITBUCKET.ORG/x", True), ("https://bitbucket.orgname.com", False),
-    ("https://evil.com/bitbucket.org", False), ("https://bitbucket.org.evil.com", False),
-    ("https://git.bitbucket.org", False)])
+@pytest.mark.parametrize(
+    "url,cloud",
+    [
+        ("https://bitbucket.org", True),
+        ("https://api.bitbucket.org/", True),
+        ("https://BITBUCKET.ORG/x", True),
+        ("https://bitbucket.orgname.com", False),
+        ("https://evil.com/bitbucket.org", False),
+        ("https://bitbucket.org.evil.com", False),
+        ("https://git.bitbucket.org", False),
+    ],
+)
 def test_cloud_detection_exact_host(url, cloud):
     assert kind(url) is cloud
 
 
 # 2 next link must match scheme, host and port
-@pytest.mark.parametrize("nxt", ["http://bb.example.com/p2", "https://bb.example.com:8443/p2",
-                                 "https://other.example.com/p2"])
+@pytest.mark.parametrize(
+    "nxt",
+    [
+        "http://bb.example.com/p2",
+        "https://bb.example.com:8443/p2",
+        "https://other.example.com/p2",
+    ],
+)
 def test_next_link_origin_mismatch_refused(nxt):
-    h = Http(FakeSession({("GET", "/p1", None): Resp(body={"values": [1], "next": nxt})}),
-             "https://bb.example.com", sleep=lambda s: None)
+    h = Http(
+        FakeSession({("GET", "/p1", None): Resp(body={"values": [1], "next": nxt})}),
+        "https://bb.example.com",
+        sleep=lambda s: None,
+    )
     with pytest.raises(BBWardenError, match="another host"):
         list(h.paginate("p1"))
 
 
 def test_next_link_default_port_ok():
-    h = Http(FakeSession({("GET", "/p1", None): Resp(body={"values": [1], "next": "https://bb.example.com:443/p2"}),
-                          ("GET", "/p2", None): Resp(body={"values": [2]})}),
-             "https://bb.example.com", sleep=lambda s: None)
+    h = Http(
+        FakeSession(
+            {
+                ("GET", "/p1", None): Resp(
+                    body={"values": [1], "next": "https://bb.example.com:443/p2"}
+                ),
+                ("GET", "/p2", None): Resp(body={"values": [2]}),
+            }
+        ),
+        "https://bb.example.com",
+        sleep=lambda s: None,
+    )
     assert list(h.paginate("p1")) == [1, 2]
 
 
@@ -53,15 +81,24 @@ def cloud_sess(extra=None):
     b = {"uuid": "{b}", "account_id": "222", "nickname": "sam"}
     r = {
         ("GET", "/2.0/workspaces/acme/projects", None): page([]),
-        ("GET", "/2.0/repositories/acme", None): page([{"slug": "api", "project": {"key": "C"}}]),
+        ("GET", "/2.0/repositories/acme", None): page(
+            [{"slug": "api", "project": {"key": "C"}}]
+        ),
         ("GET", "/2.0/repositories/acme/api/permissions-config/users", None): page(
-            [{"user": a, "permission": "write"}, {"user": b, "permission": "read"}]),
+            [{"user": a, "permission": "write"}, {"user": b, "permission": "read"}]
+        ),
         ("GET", "/2.0/repositories/acme/api/permissions-config/groups", None): page(
-            [{"group": {"slug": "devs"}, "permission": "read"}]),
+            [{"group": {"slug": "devs"}, "permission": "read"}]
+        ),
         ("GET", "/1.0/groups/acme/devs/members", None): Resp(body=[b]),
-        ("GET", "/1.0/groups/acme", None): Resp(body=[{"slug": "devs", "members": [b]},
-                                                     {"slug": "idle", "members": [b]}]),
-        ("DELETE", "/2.0/repositories/acme/api/permissions-config/users/222", None): Resp(204),
+        ("GET", "/1.0/groups/acme", None): Resp(
+            body=[{"slug": "devs", "members": [b]}, {"slug": "idle", "members": [b]}]
+        ),
+        (
+            "DELETE",
+            "/2.0/repositories/acme/api/permissions-config/users/222",
+            None,
+        ): Resp(204),
         ("DELETE", "/1.0/groups/acme/devs/members/{b}", None): Resp(204),
         ("DELETE", "/1.0/groups/acme/idle/members/{b}", None): Resp(204),
     }
@@ -70,7 +107,9 @@ def cloud_sess(extra=None):
 
 
 def cloud_backend(sess):
-    return CloudBackend(Http(sess, "https://api.bitbucket.org", sleep=lambda s: None), "acme")
+    return CloudBackend(
+        Http(sess, "https://api.bitbucket.org", sleep=lambda s: None), "acme"
+    )
 
 
 def test_cloud_duplicate_nicknames_do_not_collide():
@@ -96,7 +135,11 @@ def test_cloud_offboard_by_account_id_hits_right_person(monkeypatch):
     monkeypatch.setattr("bbwarden.cli.get_ws", lambda args, env=None, **kw: (ws, be))
     main(["offboard", "222", "--apply"])
     deletes = sorted(u.split("acme/")[1] for m, u, *_ in sess.calls if m == "DELETE")
-    assert deletes == ["api/permissions-config/users/222", "devs/members/{b}", "idle/members/{b}"]
+    assert deletes == [
+        "api/permissions-config/users/222",
+        "devs/members/{b}",
+        "idle/members/{b}",
+    ]
 
 
 def test_cloud_unknown_user_fails_instead_of_guessing():
@@ -106,24 +149,23 @@ def test_cloud_unknown_user_fails_instead_of_guessing():
         be.remove_member("devs", "nobody")
 
 
-# 4 http allowed only for exact localhost / 127.0.0.1
-@pytest.mark.parametrize("url,ok", [("http://localhost:7990", True), ("http://127.0.0.1", True),
-                                    ("http://localhost.evil.com", False), ("http://localhostx", False),
-                                    ("http://example.com", False), ("https://example.com", True)])
-def test_http_only_for_loopback(url, ok):
-    env = {**ENV, "BBWARDEN_URL": url}
-    if ok:
-        assert creds_from_env(env)[0] == url
-    else:
-        with pytest.raises(BBWardenError, match="https"):
-            creds_from_env(env)
+# 4 superseded by secure-defaults: http needs --insecure for every host (tests/test_secure.py)
+@pytest.mark.parametrize(
+    "url", ["http://localhost.evil.com", "http://localhostx", "http://example.com"]
+)
+def test_http_refused_by_default(url):
+    with pytest.raises(BBWardenError, match="https"):
+        creds_from_env({**ENV, "BBWARDEN_URL": url})
 
 
 # 5 unknown permission is manual in regroup
 def test_regroup_unknown_permission_is_manual():
-    ws = Workspace(users={"a": {"active": True}}, groups={"g": ["a"]},
-                   projects={"P": {"users": {}, "groups": {}}},
-                   repos={"r": {"project": "P", "users": {"a": "REPO_CREATE"}, "groups": {}}})
+    ws = Workspace(
+        users={"a": {"active": True}},
+        groups={"g": ["a"]},
+        projects={"P": {"users": {}, "groups": {}}},
+        repos={"r": {"project": "P", "users": {"a": "REPO_CREATE"}, "groups": {}}},
+    )
     plan = core.regroup(ws, "r")
     assert plan[0]["action"] == "manual" and "unknown permission" in plan[0]["detail"]
 
@@ -146,15 +188,24 @@ def test_regroup_unknown_permission_is_manual():
 def test_dc_offboard_loads_all_memberships(monkeypatch):
     page = lambda v: Resp(body={"values": v, "isLastPage": True})
     P = "/rest/api/1.0"
-    sess = FakeSession({
-        ("GET", f"{P}/projects", None): page([]),
-        ("GET", f"{P}/admin/users", None): page([]),
-        ("GET", f"{P}/admin/users/more-members", None): page([{"name": "unused-grp"}]),
-        ("POST", f"{P}/admin/users/remove-group", None): Resp(200),
-    })
-    main(["offboard", "zed", "--apply"], env={**ENV, "BBWARDEN_URL": "https://bb.example.com"},
-         session_factory=lambda *a: sess)
-    assert ("POST", {"context": "zed", "itemName": "unused-grp"}) in [(m, j) for m, u, p, j in sess.calls]
+    sess = FakeSession(
+        {
+            ("GET", f"{P}/projects", None): page([]),
+            ("GET", f"{P}/admin/users", None): page([]),
+            ("GET", f"{P}/admin/users/more-members", None): page(
+                [{"name": "unused-grp"}]
+            ),
+            ("POST", f"{P}/admin/users/remove-group", None): Resp(200),
+        }
+    )
+    main(
+        ["offboard", "zed", "--apply"],
+        env={**ENV, "BBWARDEN_URL": "https://bb.example.com"},
+        session_factory=lambda *a: sess,
+    )
+    assert ("POST", {"context": "zed", "itemName": "unused-grp"}) in [
+        (m, j) for m, u, p, j in sess.calls
+    ]
 
 
 # 7 --skip-memberships
@@ -177,8 +228,11 @@ def test_post_not_retried():
 def test_put_and_delete_retried():
     for m in ("PUT", "DELETE"):
         sleeps = []
-        h = Http(FakeSession({(m, "/x", None): [Resp(429), Resp(204)]}), "https://bb.example.com",
-                 sleep=sleeps.append)
+        h = Http(
+            FakeSession({(m, "/x", None): [Resp(429), Resp(204)]}),
+            "https://bb.example.com",
+            sleep=sleeps.append,
+        )
         assert h.request(m, "x").status_code == 204 and len(sleeps) == 1
 
 
@@ -187,10 +241,15 @@ def test_non_json_response_clean_error():
     class Html(Resp):
         def json(self):
             raise ValueError("Expecting value: <html>secret page</html>")
+
     h = Http(FakeSession({("GET", "/x", None): Html(200)}), "https://bb.example.com")
     with pytest.raises(BBWardenError) as e:
         h.get("x")
-    assert "200" in str(e.value) and "not JSON" in str(e.value) and "secret" not in str(e.value)
+    assert (
+        "200" in str(e.value)
+        and "not JSON" in str(e.value)
+        and "secret" not in str(e.value)
+    )
 
 
 # 10 Cloud 1.0 groups call mocked

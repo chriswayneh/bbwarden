@@ -4,6 +4,41 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-10-15
+
+### Added
+- `--insecure` flag to allow `http://` for `BBWARDEN_URL` and `CROWD_URL` (local test servers),
+  with a warning on stderr.
+- `CROWD_APP_PASSWORD`, matching crowdkeeper.
+- `mypy` (with `check_untyped_defs`), `ruff` and `types-requests` in the `dev` extra; code is
+  `ruff format`ted.
+- SECURITY.md: private contact while the repo is private, supported versions, security design notes.
+
+### Changed
+- **Breaking**: `http://` is refused for every host unless `--insecure` is given. This drops
+  the automatic `localhost` and `127.0.0.1` exception from 0.2.0; add `--insecure` for a
+  local http test server. URLs without a hostname are refused.
+- Configuration errors (http refused, no hostname, missing variable) print `error: ...` to
+  stderr and exit with code 2. Other errors still exit with code 1.
+
+### Security
+- HTTP redirects are refused on every Bitbucket and Crowd request (`allow_redirects=False`
+  and `max_redirects=0` on the sessions). A 3xx response, or a response that was redirected
+  anyway, is an error (`redirect refused: <status> to <host>`) naming only the status and
+  the target host.
+- `BBWARDEN_URL` and `CROWD_URL` with embedded credentials (`https://user:pass@host`), a query
+  string or a fragment are refused as a configuration error (exit 2) without echoing them,
+  as is a URL that is not a valid URL (for example a broken IPv6 host or port).
+- URLs in error messages keep only scheme, host, port and path; userinfo, query strings and
+  fragments are dropped (IPv6 hosts handled). Previously userinfo could appear in redirect,
+  network and 401/403 messages.
+- A failed `--apply` step that raises an unexpected (non-bbwarden) exception is reported
+  and logged by exception type only, since its message could carry secrets.
+
+### Deprecated
+- `CROWD_PASSWORD`: still accepted, with a deprecation warning on stderr when it is used. If
+  `CROWD_APP_PASSWORD` is also set, it wins and a note says `CROWD_PASSWORD` is ignored.
+
 ## [0.2.0] - 2026-10-15
 
 ### Added

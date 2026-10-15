@@ -1,4 +1,5 @@
 """Tests for QE minor fixes on PR #1."""
+
 import re
 from pathlib import Path
 
@@ -15,15 +16,27 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def cloud_ws():
     return Workspace(
-        users={"111": {"active": None, "name": "sam"}, "222": {"active": None, "name": "kim"}},
+        users={
+            "111": {"active": None, "name": "sam"},
+            "222": {"active": None, "name": "kim"},
+        },
         groups={"devs": ["111", "222"]},
         projects={"C": {"users": {}, "groups": {}}},
-        repos={"api": {"project": "C", "users": {"111": "READ"}, "groups": {"devs": "READ"}}})
+        repos={
+            "api": {
+                "project": "C",
+                "users": {"111": "READ"},
+                "groups": {"devs": "READ"},
+            }
+        },
+    )
 
 
 # (a) missing 'members' is an error, not an empty group
 def test_cloud_load_memberships_missing_members_raises():
-    sess = FakeSession({("GET", "/1.0/groups/acme", None): Resp(body=[{"slug": "devs"}])})
+    sess = FakeSession(
+        {("GET", "/1.0/groups/acme", None): Resp(body=[{"slug": "devs"}])}
+    )
     be = CloudBackend(Http(sess, "https://api.bitbucket.org"), "acme")
     with pytest.raises(BBWardenError, match="no member list for group devs"):
         be.load_memberships(Workspace(), "111")
@@ -32,10 +45,12 @@ def test_cloud_load_memberships_missing_members_raises():
 # (b) status matching: key first, then display name; README says so
 def test_orphans_status_matching_key_then_name():
     ws = cloud_ws()
-    dis = lambda st: {r["user"] for r in core.orphans(ws, st) if r["idp_status"] == "disabled"}
+    dis = lambda st: {
+        r["user"] for r in core.orphans(ws, st) if r["idp_status"] == "disabled"
+    }
     assert dis({"sam": False}) == {"sam (111)"}
     assert dis({"111": False}) == {"sam (111)"}
-    assert dis({"111": True, "sam": False}) == set()      # key wins over name
+    assert dis({"111": True, "sam": False}) == set()  # key wins over name
 
 
 def test_readme_describes_status_matching():
@@ -69,7 +84,9 @@ def test_resolve_user_unknown_raises():
 # (e) Crowd 404 and other-error branches
 def test_crowd_404_is_disabled():
     s = FakeSession({("GET", "/rest/usermanagement/1/user", None): Resp(404)})
-    assert crowd_status(Http(s, "https://crowd.example.com"), ["gone"]) == {"gone": False}
+    assert crowd_status(Http(s, "https://crowd.example.com"), ["gone"]) == {
+        "gone": False
+    }
 
 
 def test_crowd_other_error_raises():
@@ -80,22 +97,33 @@ def test_crowd_other_error_raises():
 
 # (f) version 0.2.0 everywhere plus changelog
 def test_version_consistent():
-    assert __version__ == "0.2.0"
+    """One source of truth: README and CHANGELOG follow bbwarden.__version__."""
     py = (ROOT / "pyproject.toml").read_text()
-    assert 'version = {attr = "bbwarden.__version__"}' in py and "0.1.0" not in py
-    assert "bbwarden 0.2.0" in (ROOT / "README.md").read_text()
-    assert re.search(r"^## \[0\.2\.0\]", (ROOT / "CHANGELOG.md").read_text(), re.MULTILINE)
+    assert 'version = {attr = "bbwarden.__version__"}' in py and not re.search(
+        r'^version = "', py, re.MULTILINE
+    )
+    assert f"bbwarden {__version__}" in (ROOT / "README.md").read_text()
+    assert re.search(
+        rf"^## \[{re.escape(__version__)}\]",
+        (ROOT / "CHANGELOG.md").read_text(),
+        re.MULTILINE,
+    )
 
 
 # (g) nosec on jitter
 def test_jitter_has_nosec_reason():
-    line = next(x for x in (ROOT / "src/bbwarden/http.py").read_text().splitlines() if "random.uniform" in x)
+    line = next(
+        x
+        for x in (ROOT / "src/bbwarden/http.py").read_text().splitlines()
+        if "random.uniform" in x
+    )
     assert re.search(r"# nosec B311 .*\w{4,}", line)
 
 
 # review on 7103107: hidden key column, DC typo raises UnknownUser
 def test_regroup_table_and_csv_hide_key(tmp_path, capsys):
     from bbwarden.cli import main
+
     out = tmp_path / "r.csv"
     main(["regroup", "api", "--demo", "--csv", str(out)])
     header = capsys.readouterr().out.splitlines()[0].split()
@@ -106,29 +134,45 @@ def test_regroup_table_and_csv_hide_key(tmp_path, capsys):
 
 def core_demo():
     from bbwarden.model import demo_workspace
+
     return demo_workspace()
 
 
 def test_readme_samples_match_real_output():
     import subprocess
     import sys
+
     s = (ROOT / "README.md").read_text()
-    for cmd in ["who api", "who web", "direct", "orphans --idp crowd", "regroup api", "offboard dave"]:
-        out = subprocess.run([sys.executable, "-m", "bbwarden.cli", *cmd.split(), "--demo"],
-                             capture_output=True, text=True, check=True).stdout
+    for cmd in [
+        "who api",
+        "who web",
+        "direct",
+        "orphans --idp crowd",
+        "regroup api",
+        "offboard dave",
+    ]:
+        out = subprocess.run(
+            [sys.executable, "-m", "bbwarden.cli", *cmd.split(), "--demo"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
         assert f"$ bbwarden {cmd} --demo\n{out}```" in s, cmd
 
 
 def test_dc_typo_user_raises_unknown(monkeypatch):
     from bbwarden.cli import main
     from bbwarden.live import DataCenter
+
     page = lambda v: Resp(body={"values": v, "isLastPage": True})
     P = "/rest/api/1.0"
-    sess = FakeSession({
-        ("GET", f"{P}/projects", None): page([]),
-        ("GET", f"{P}/admin/users", None): page([]),
-        ("GET", f"{P}/admin/users/more-members", None): page([]),
-    })
+    sess = FakeSession(
+        {
+            ("GET", f"{P}/projects", None): page([]),
+            ("GET", f"{P}/admin/users", None): page([]),
+            ("GET", f"{P}/admin/users/more-members", None): page([]),
+        }
+    )
     be = DataCenter(Http(sess, "https://bb.example.com"))
     ws = be.load()
     be.load_memberships(ws, "zedd")
