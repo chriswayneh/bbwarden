@@ -9,7 +9,9 @@ All notable changes to bbwarden are listed here. The format follows
 ### Fixed
 - `offboard` now removes every direct global permission on Data Center (for example
   `LICENSED_USER` or `PROJECT_CREATE`), not only admin levels, so offboarding no longer
-  leaves global access behind.
+  leaves global access behind. Data Center users whose only access is a direct global
+  permission (for example `LICENSED_USER`) are now loaded into the inventory so `offboard`
+  finds them; the `who`, `direct`, `orphans` and `regroup` reports are unchanged.
 - Pagination fails loudly with an `incomplete pagination` error (exit 1) on a page without a
   `values` list, a Data Center page that is neither the last nor has a `nextPageStart`, or a
   repeated cursor, instead of silently using a partial list.
@@ -22,16 +24,22 @@ All notable changes to bbwarden are listed here. The format follows
   not run, then exits 130.
 - `--csv` never removes or truncates an existing file while checking that the path is
   writable, and writes through a temporary file renamed into place, so a failed write keeps
-  the old file.
+  the old file. A symlink is followed: its target is updated and the link stays.
 - Crowd status needs a real boolean `active` flag; a string, number or missing flag is an
   error instead of a guess.
 - With `--raw-csv`, lone surrogates are written as U+FFFD, so they can no longer be confused
-  with a name that literally contains `\ud800` (ROADMAP known limit).
+  with a name that literally contains `\ud800` (ROADMAP known limit). A U+FFFD in raw CSV
+  can no longer be told apart from a real U+FFFD in the data; use the default escaped CSV
+  when that matters.
 - Ctrl-C while bbwarden is still importing or parsing arguments prints `interrupted` and
   exits 130 instead of a Python traceback (ROADMAP known limit). The console script now
   points at `bbwarden._entry:run`.
 
 ### Changed
+- CSV writes are atomic, so `--csv` needs a writable folder: a writable file in a read-only
+  folder is now refused before any output (exit 1). The rename creates a new file, so the
+  old file's owner, ACLs and extended attributes are not kept and hard links to it keep the
+  old content; only the permission bits are copied.
 - New exit code 3: the command finished but part of the inventory could not be loaded
   (`NOTE:` lines plus an `INCOMPLETE:` line on stderr). Previously this exited 0.
 
