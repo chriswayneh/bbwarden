@@ -167,8 +167,8 @@ control and format characters such as `\u200b`) with `'` so spreadsheets do not 
 formulas. CSV cells keep the original data otherwise.
 
 Terminal output is escaped: in table cells and in `error:`, `MANUAL`, `NOTE:` and log lines,
-control and format characters (C0, DEL, C1, Unicode Cc, Cf, Cs) are shown as escaped code
-points such as `\x1b` or `\u202e`, so names from Bitbucket or an IdP cannot inject terminal
+control and format characters (C0, DEL, C1, Unicode Cc, Cf, Cs, Co, Cn, Zl, Zp) are shown as
+escaped code points such as `\x1b` or `\u202e` (a backslash shows as `\\`), so names from Bitbucket or an IdP cannot inject terminal
 escape sequences or bidi overrides. The CSV path is checked for writability before
 anything is printed.
 

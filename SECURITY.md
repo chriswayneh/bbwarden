@@ -51,6 +51,7 @@ version, and the CHANGELOG Security section describes them.
 - **Safe exports.** CSV output neutralizes spreadsheet formulas, also behind leading
   invisible characters (since 0.2.2).
 - **Escaped terminal output (since 0.2.2).** Table cells and stderr lines print control and
-  format characters (C0, DEL, C1, Unicode Cc, Cf, Cs) as escaped code points, never raw.
+  format characters (C0, DEL, C1, Unicode Cc, Cf, Cs, Co, Cn, Zl, Zp) as escaped code points,
+  never raw; backslashes are doubled and log messages are escaped with their arguments.
 - **Least privilege.** Read commands need admin read only. Parts that need more rights (global
   admins, workspace owners) are skipped with a `NOTE:` instead of failing.

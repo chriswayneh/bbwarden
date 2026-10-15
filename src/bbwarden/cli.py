@@ -1,4 +1,5 @@
 import argparse
+import copy
 import csv
 import logging
 import os
@@ -22,13 +23,15 @@ COLUMNS = {
 FORMULA = ("=", "+", "-", "@", "\t", "\r")
 
 
+# Cc control, Cf format (bidi overrides, zero-width), Cs lone surrogates, Co private use,
+# Cn unassigned, Zl/Zp line and paragraph separators (U+2028, U+2029).
+_UNSAFE = ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp")
+
+
 def _is_control(c):
-    """C0, DEL, C1, and Unicode Cc (control), Cf (format, incl. bidi overrides and zero-width
-    characters) and Cs (lone surrogates)."""
+    """C0, DEL, C1, and the Unicode categories in _UNSAFE."""
     o = ord(c)
-    return (
-        o < 0x20 or 0x7F <= o <= 0x9F or unicodedata.category(c) in ("Cc", "Cf", "Cs")
-    )
+    return o < 0x20 or 0x7F <= o <= 0x9F or unicodedata.category(c) in _UNSAFE
 
 
 def escape(s):
@@ -38,7 +41,9 @@ def escape(s):
     every stderr line built from data."""
     out = []
     for c in str(s):
-        if not _is_control(c):
+        if c == "\\":  # so a literal "\\x1b" in a name cannot pass for an escaped ESC
+            out.append("\\\\")
+        elif not _is_control(c):
             out.append(c)
         elif ord(c) <= 0xFF:
             out.append(f"\\x{ord(c):02x}")
@@ -49,16 +54,35 @@ def escape(s):
     return "".join(out)
 
 
-def _escape_lines(s):
-    """escape() per line, keeping the line breaks of multi-line messages."""
-    return "\n".join(escape(ln) for ln in str(s).split("\n"))
-
-
 class EscapingFormatter(logging.Formatter):
-    """Log lines go to stderr too, and step labels carry names from the server."""
+    """Log lines go to stderr too, and step labels carry names from the server. The message
+    with its arguments is escaped before formatting, so a name holding a newline cannot start
+    a forged log line; only the formatter's own line breaks (tracebacks) remain."""
 
     def format(self, record):
-        return _escape_lines(super().format(record))
+        record = copy.copy(record)
+        record.msg, record.args = escape(record.getMessage()), None
+        return super().format(record)
+
+
+def display_width(s):
+    """Terminal columns: East Asian wide and fullwidth count 2, combining marks 0."""
+    return sum(
+        0
+        if unicodedata.combining(c)
+        else 2
+        if unicodedata.east_asian_width(c) in ("W", "F")
+        else 1
+        for c in s
+    )
+
+
+class Parser(argparse.ArgumentParser):
+    """argparse echoes bad arguments; escape them like every other stderr line."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: error: {escape(message)}\n")
 
 
 def _safe_cell(v):
@@ -76,8 +100,10 @@ def table(rows, cols):
     if not rows:
         return "(no results)"
     rows = [{c: escape(r.get(c, "")) for c in cols} for r in rows]
-    w = {c: max(len(c), *(len(r[c]) for r in rows)) for c in cols}
-    line = lambda r: "  ".join(str(r[c]).ljust(w[c]) for c in cols).rstrip()
+    w = {c: max(len(c), *(display_width(r[c]) for r in rows)) for c in cols}
+    line = lambda r: "  ".join(
+        r[c] + " " * (w[c] - display_width(r[c])) for c in cols
+    ).rstrip()
     return "\n".join(
         [line({c: c.upper() for c in cols}), "  ".join("-" * w[c] for c in cols)]
         + [line(r) for r in rows]
@@ -100,11 +126,9 @@ def get_ws(args, env=None, **kw):
 
 
 def build_parser():
-    p = argparse.ArgumentParser(
-        prog="bbwarden", description="Bitbucket least-privilege and offboarding"
-    )
+    p = Parser(prog="bbwarden", description="Bitbucket least-privilege and offboarding")
     p.add_argument("--version", action="version", version=f"bbwarden {__version__}")
-    common = argparse.ArgumentParser(add_help=False)
+    common = Parser(add_help=False)
     common.add_argument(
         "--demo", action="store_true", help="use built-in mock workspace"
     )

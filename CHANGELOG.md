@@ -11,7 +11,11 @@ All notable changes to bbwarden are listed here. The format follows
   reports and log lines) escape control and format characters: C0, DEL, C1 and Unicode
   categories Cc, Cf and Cs are printed as escaped code points (for example `\x1b`, `\u202e`).
   A repo, user, group or IdP name can no longer inject terminal escape sequences or bidi
-  overrides. CSV output keeps the original data.
+  overrides. CSV output keeps the original data. Line and paragraph separators (U+2028,
+  U+2029), private-use and unassigned code points are escaped too, and a backslash is shown
+  as `\\` so literal text cannot pass for an escape. Log messages are escaped with their
+  arguments, so a name holding a newline cannot forge a log line. argparse errors are escaped.
+  Table columns are aligned by display width (wide characters 2, combining marks 0).
 - The CSV formula guard skips leading control and format characters (for example `\u200b`
   or `\x1b`) before checking for `=`, `+`, `-` or `@`, so `\u200b=cmd` is neutralized.
 - `requests>=2.32.4` (fixes CVE-2024-47081, .netrc credential leak).
