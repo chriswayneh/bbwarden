@@ -43,7 +43,7 @@ def require_https(name, url, insecure):
               file=sys.stderr)
         return
     raise ConfigError(f"{name} must use https:// so credentials are not sent in clear text "
-                        "(pass --insecure to allow http:// for a local test server)")
+                      "(pass --insecure to allow http:// for a local test server)")
 
 
 def creds_from_env(env=None, insecure=False):
@@ -295,7 +295,7 @@ def crowd_creds(env=None):
             pw = env["CROWD_PASSWORD"]
     if not (url and app and pw):
         raise MissingConfig("--idp crowd needs CROWD_URL, CROWD_APP and CROWD_APP_PASSWORD (Crowd "
-                        "application credentials), or use --idp csv")
+                            "application credentials), or use --idp csv")
     return url, app, pw
 
 

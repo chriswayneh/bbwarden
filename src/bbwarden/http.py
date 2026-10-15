@@ -31,8 +31,6 @@ class ManualStep(BBWardenError):
     """The step cannot be done by API and must be done by hand (e.g. Cloud workspace owner)."""
 
 
-
-
 def _retry_after(resp):
     val = resp.headers.get("Retry-After")
     if not val:

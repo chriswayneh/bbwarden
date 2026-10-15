@@ -10,7 +10,7 @@ All notable changes to bbwarden are listed here. The format follows
 - `--insecure` flag to allow `http://` for `BBWARDEN_URL` and `CROWD_URL` (local test servers),
   with a warning on stderr.
 - `CROWD_APP_PASSWORD`, matching crowdkeeper.
-- SECURITY.md: private vulnerability reporting, supported versions, security design notes.
+- SECURITY.md: private contact while the repo is private, supported versions, security design notes.
 
 ### Changed
 - **Breaking**: `http://` is refused for every host unless `--insecure` is given. This drops

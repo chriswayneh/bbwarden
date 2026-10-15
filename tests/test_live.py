@@ -93,13 +93,15 @@ def test_auth_error_strips_query_string():
     assert SECRET not in str(e.value)
 
 
-def test_missing_creds_named_without_values():
+def test_missing_creds_named_without_values(capsys):
     with pytest.raises(AuthError) as e:
         creds_from_env({"BBWARDEN_URL": "https://bb.example.com", "BBWARDEN_TOKEN": SECRET})
     assert "BBWARDEN_USER" in str(e.value) and SECRET not in str(e.value)
     with pytest.raises(SystemExit) as e:
         main(["direct"], env={})
     assert e.value.code == 2
+    err = capsys.readouterr().err
+    assert "error: missing BBWARDEN_URL" in err and SECRET not in err
 
 
 def test_plain_http_rejected():
@@ -209,11 +211,12 @@ def test_crowd_orphans_live(capsys):
     assert "dave" in out and "bob" not in out.split("IDP_STATUS")[1]
 
 
-def test_crowd_missing_creds():
+def test_crowd_missing_creds(capsys):
     with pytest.raises(SystemExit) as e:
         main(["orphans", "--idp", "crowd"], env=DC_ENV,
              session_factory=lambda *a: FakeSession(dc_routes()))
     assert e.value.code == 2
+    assert "CROWD_URL" in capsys.readouterr().err
 
 
 # ---- review fixes ----
