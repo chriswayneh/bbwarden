@@ -265,8 +265,9 @@ def table(rows, cols):
 
 
 def write_csv(rows, path, cols, raw=False):
-    """Returns the stdout state ("ok", "pipe" or "error", see stdout_call). UTF-8, always with the header row, even with no rows. See _safe_cell for raw.
-    Written to a temporary sibling and renamed over the target, so a failed write
+    """Write the CSV and return the stdout state ("ok", "pipe" or "error", see
+    stdout_call). UTF-8, always with the header row, even with no rows. See _safe_cell
+    for raw. Written to a temporary sibling and renamed over the target, so a failed write
     never leaves a truncated file and never destroys the previous one. A symlink is
     followed, so its target is updated and the link stays a link. The temporary file is
     owner-only (0o600) while rows are written and gets its final mode just before the
@@ -513,6 +514,20 @@ def flush_stdout():
     return stdout_call(lambda out: out.flush())
 
 
+def flush_stderr():
+    """Flush stderr; if that fails (`2>/dev/full`), point it at os.devnull so the exit
+    code stays the real one. A missing stderr is skipped."""
+    err = sys.stderr
+    if err is None:
+        return
+    try:
+        err.flush()
+    except (OSError, ValueError):
+        from ._entry import _fd_to_devnull
+
+        _fd_to_devnull(err)
+
+
 def final_code(code, state):
     """Exit code after the last stdout flush. A gone reader only turns success into 141;
     an unwritable stdout turns success, 3 and 141 into 1. 2, 1, 130 and error messages
@@ -531,8 +546,12 @@ def main(argv=None, env=None, **kw):
     try:
         code = _main(argv, env, **kw)
     except SystemExit as e:
-        raise SystemExit(final_code(e.code, flush_stdout())) from None
-    return final_code(code, flush_stdout())
+        code = final_code(e.code, flush_stdout())
+        flush_stderr()
+        raise SystemExit(code) from None
+    code = final_code(code, flush_stdout())
+    flush_stderr()
+    return code
 
 
 def _main(argv=None, env=None, **kw):
@@ -745,4 +764,6 @@ class _Stdout:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    from bbwarden._entry import run
+
+    run()

@@ -195,3 +195,37 @@ def test_helper_skips_none_stdout(monkeypatch):
     with pytest.raises(SystemExit) as e:
         cli.main(["--version"])
     assert e.value.code == 0
+
+
+# Reviewer minors at ee97a1a: an unwritable stderr keeps the real exit code
+
+
+def _noenv():
+    return {k: v for k, v in ENV.items() if not k.startswith(("BBWARDEN_", "CROWD_"))}
+
+
+@posix
+@full
+@HEADS
+@pytest.mark.parametrize(
+    "args,redir,want",
+    [
+        (["nosuchcommand"], "2>/dev/full", 2),
+        (["direct"], "2>/dev/full", 2),
+        (["nosuchcommand"], ">/dev/full 2>/dev/full", 2),
+        (["direct"], ">/dev/full 2>/dev/full", 2),
+        (["who", "nosuchrepo", "--demo"], "2>/dev/full", 1),
+        (["direct", "--demo"], ">/dev/full 2>/dev/full", 1),
+        (["direct", "--demo"], "2>/dev/full", 0),
+    ],
+)
+def test_unwritable_stderr_keeps_exit_code(tmp_path, head, args, redir, want):
+    r = subprocess.run(
+        ["/bin/sh", "-c", f"{_q([*head, *args])} {redir}"],
+        stdout=subprocess.DEVNULL,
+        check=False,
+        env=_noenv(),
+        cwd=tmp_path,
+        timeout=TIMEOUT,
+    )
+    assert r.returncode == want

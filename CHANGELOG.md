@@ -49,7 +49,9 @@ All notable changes to bbwarden are listed here. The format follows
 - Every stdout write and flush goes through one helper: a closed stdout (`>&-`) is skipped
   (the CSV is still written, exit 0), `--help` and `--version` to a gone reader exit 141,
   and an unwritable stdout (`> /dev/full`) prints `error: cannot write to stdout` and
-  exits 1. None of these ends in a traceback, "Exception ignored" or exit 120.
+  exits 1. With stdout closed, stdout output is silently skipped and the run exits 0 (the
+  CSV is still written). An unwritable stderr (`2>/dev/full`) keeps the real exit code.
+  None of these ends in a traceback, "Exception ignored" or exit 120.
 - CSV writes are atomic, so `--csv` needs a writable folder: a writable file in a read-only
   folder is now refused before any output (exit 1). The rename creates a new file, so the
   old file's owner, ACLs and extended attributes are not kept and hard links to it keep the
