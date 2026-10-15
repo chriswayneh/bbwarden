@@ -1,4 +1,5 @@
 """Redirect handling against a real requests.Session and a local http.server."""
+
 import http.server
 import threading
 
@@ -47,8 +48,11 @@ def test_bitbucket_path_real_session(server):
 def test_crowd_path_real_session(server):
     srv, base = server
     env = {"CROWD_URL": base, "CROWD_APP": "app", "CROWD_APP_PASSWORD": "pw"}
-    crowd = live.crowd_from_env(env, session_factory=lambda: live.harden_session(requests.Session()),
-                                insecure=True)
+    crowd = live.crowd_from_env(
+        env,
+        session_factory=lambda: live.harden_session(requests.Session()),
+        insecure=True,
+    )
     with pytest.raises(BBWardenError) as e:
         live.crowd_status(crowd, ["bob"])
     check(str(e.value), srv.status)

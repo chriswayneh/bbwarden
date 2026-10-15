@@ -24,7 +24,12 @@ def test_who_project_and_unknown(capsys):
 def test_direct():
     rows = core.direct(demo_workspace())
     assert len(rows) == 5
-    assert {"scope": "project", "name": "CORE", "user": "dave", "permission": "WRITE"} in rows
+    assert {
+        "scope": "project",
+        "name": "CORE",
+        "user": "dave",
+        "permission": "WRITE",
+    } in rows
 
 
 def test_orphans_crowd_demo(capsys):
@@ -43,7 +48,10 @@ def test_orphans_csv(tmp_path):
 def test_regroup_dry_and_apply(capsys):
     ws = demo_workspace()
     plan = core.regroup(ws, "api")
-    assert {p["user"]: p["action"] for p in plan} == {"bob": "replace", "erin": "manual"}
+    assert {p["user"]: p["action"] for p in plan} == {
+        "bob": "replace",
+        "erin": "manual",
+    }
     main(["regroup", "api", "--demo"])
     assert "DRY RUN" in capsys.readouterr().out
     core.apply_regroup(ws, plan)
@@ -54,7 +62,10 @@ def test_regroup_dry_and_apply(capsys):
 def test_offboard(capsys):
     ws = demo_workspace()
     plan = core.offboard(ws, "alice")
-    assert {(p["scope"], p["name"]) for p in plan} == {("group", "admins"), ("group", "devs")}
+    assert {(p["scope"], p["name"]) for p in plan} == {
+        ("group", "admins"),
+        ("group", "devs"),
+    }
     core.apply_offboard(ws, "alice", plan)
     assert all("alice" not in m for m in ws.groups.values())
     main(["offboard", "dave", "--demo", "--apply"])
