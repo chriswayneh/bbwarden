@@ -18,5 +18,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest -q
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy src
+      - run: pytest --cov=bbwarden --cov-branch --cov-report=term-missing
       - run: bbwarden who CORE --demo
