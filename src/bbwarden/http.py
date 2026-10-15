@@ -76,8 +76,11 @@ def _origin(url):
     are kept (bitbucket_server, my_host.internal), non-ASCII labels are IDNA2008-encoded
     (büro.my_host.internal is sent as xn--bro-hoa.my_host.internal), and the host is
     lowercased. Hosts that only IDNA2003 would merge (faß vs fass, ς vs σ) stay different.
-    A URL that requests refuses or that has no host gets a fresh object() as host, which
+    A URL that requests refuses, that has no host, or that raises any error gets a fresh object() as host, which
     equals nothing, so it is never treated as the same origin."""
+    # A fresh object() per call is what guarantees no match: it compares equal only to
+    # itself, and each _origin call builds a new one, so two failed URLs never compare equal,
+    # not even the same URL twice.
     never = ("", object(), None)
     try:
         prepared = requests.models.PreparedRequest()
@@ -85,7 +88,7 @@ def _origin(url):
         u = parse_url(prepared.url or "")
         host = (u.host or "").lower()
         port = u.port
-    except (requests.RequestException, ValueError):  # InvalidURL, LocationParseError
+    except Exception:  # noqa: BLE001 - fail closed: any error means "not the same origin"
         return never
     if not host:
         return never
