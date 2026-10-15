@@ -29,8 +29,8 @@ version, and the CHANGELOG Security section describes them.
 - **https only (since 0.2.1).** `BBWARDEN_URL` and `CROWD_URL` must use `https://`. Plain `http://` is
   refused for every host, loopback included, unless you pass `--insecure`, which allows it
   and prints a warning on stderr. Use it only for a local test server. A URL that is not
-  a valid URL or has no hostname (for example `https://` or `https:x`) is always refused. So is a URL with embedded
-  credentials (`https://user:pass@host`), a query string or a fragment;
+  a valid URL or has no hostname (for example `https://` or `https:x`) is always refused.
+  So is a URL with embedded credentials (`https://user:pass@host`), a query string or a fragment;
   the error does not repeat the URL. A failed `--apply` step reports only the exception type
   for unexpected errors, never their message.
 - **No redirects (since 0.2.1).** Every request is sent with redirects disabled, and the
