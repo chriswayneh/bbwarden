@@ -28,8 +28,10 @@ All notable changes to bbwarden are listed here. The format follows
   keeps the original characters, prints a warning, and still neutralizes formulas. Lone
   surrogates are escaped in both modes, so they no longer crash `--csv`.
 - An `--idp-file` that is not UTF-8 is a clean configuration error (exit 2) instead of a
-  traceback; a UTF-8 BOM is accepted. Any other unexpected error prints an escaped
-  traceback and exits 1, never a raw one.
+  traceback; a UTF-8 BOM is accepted. Any other unexpected error prints a traceback
+  with frame lines and exception types only (no messages or notes, which could carry
+  secrets) and exits 1; log tracebacks use the same type-only rendering. Ctrl-C prints
+  `interrupted` and exits 130.
 - Log lines name the failed step without quotes, escaped once.
 - `requests>=2.32.4` (fixes CVE-2024-47081, .netrc credential leak).
 

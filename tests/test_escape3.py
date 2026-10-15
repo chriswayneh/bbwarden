@@ -16,7 +16,7 @@ needs_311 = pytest.mark.skipif(
 
 
 def render(exc):
-    f = cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s")
+    f = cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s", safe=False)
     rec = logging.LogRecord(
         "bbwarden",
         logging.ERROR,

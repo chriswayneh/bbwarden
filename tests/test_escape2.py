@@ -13,7 +13,7 @@ FORGE = "evil\nbbwarden: ERROR forged"
 
 @pytest.mark.parametrize("name", [FORGE, "evil\rbbwarden: ERROR forged"])
 def test_formatter_escapes_newlines_in_args(name):
-    f = cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s")
+    f = cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s", safe=False)
     rec = logging.LogRecord(
         "bbwarden", logging.ERROR, "", 0, "step %r: %s", (1, name), None
     )
@@ -24,7 +24,7 @@ def test_formatter_escapes_newlines_in_args(name):
 
 
 def test_formatter_keeps_traceback_lines():
-    f = cli.EscapingFormatter("%(message)s")
+    f = cli.EscapingFormatter("%(message)s", safe=False)
     try:
         raise ValueError("boom")
     except ValueError:
@@ -51,7 +51,9 @@ def test_apply_log_through_logger_not_forged(capsys):
     ws.repos["api"]["users"][FORGE] = "WRITE"
     ws.repos["web"]["users"][FORGE] = "WRITE"
     handler = logging.StreamHandler()
-    handler.setFormatter(cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s"))
+    handler.setFormatter(
+        cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s", safe=False)
+    )
     log = logging.getLogger("bbwarden")
     log.addHandler(handler)
     try:
@@ -127,7 +129,9 @@ def _forged(text):
 
 def test_exc_info_message_cannot_forge_lines(capsys):
     handler = logging.StreamHandler()
-    handler.setFormatter(cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s"))
+    handler.setFormatter(
+        cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s", safe=False)
+    )
     log = logging.getLogger("bbwarden.test_exc")
     log.addHandler(handler)
     try:
@@ -149,7 +153,7 @@ def test_exc_info_message_cannot_forge_lines(capsys):
 
 
 def test_stack_info_lines_escaped(capsys):
-    f = cli.EscapingFormatter("%(message)s")
+    f = cli.EscapingFormatter("%(message)s", safe=False)
     out = f.formatStack('  File "x.py", line 1, in f\n    name = "a\x1b[2J"')
     assert "\x1b" not in out and len(out.splitlines()) == 2
 

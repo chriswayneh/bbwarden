@@ -110,7 +110,7 @@ def test_last_resort_handler(monkeypatch, capsys):
     err = capsys.readouterr().err
     lines = err.splitlines()
     assert lines[0].startswith("error: unexpected ")
-    assert "TypeError: bad\\x0abbwarden: ERROR forged\\x1b[2J" in err
+    assert lines[-1] == "TypeError" and "TypeError: bad" not in err  # type only
     assert "\x1b" not in err
     assert not any(ln.startswith("bbwarden: ERROR forged") for ln in lines)
 

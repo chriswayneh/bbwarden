@@ -164,10 +164,11 @@ are reported as `missing`, so a partial export cannot look clean.
 `--csv` always writes a header row, even with no results, and prefixes cells starting with
 `=`, `+`, `-`, `@`, tab or carriage return (also after leading whitespace or invisible
 control and format characters such as `\u200b`) with `'` so spreadsheets do not run them as
-formulas. The CSV file is UTF-8, and its cells are escaped like terminal output (below), so
-opening it in a terminal or viewer never runs escape sequences. `--raw-csv` (any command)
-keeps the original characters instead and prints a warning on stderr; formulas are still
-neutralized and lone surrogates are still escaped. The CSV path is checked for writability
+formulas. The CSV file is UTF-8, and by default its cells are escaped like terminal output
+(below): backslashes are doubled and control and format characters become escaped code
+points, so opening it in a terminal or viewer never runs escape sequences. Use `--raw-csv`
+(any command) when you import the CSV into other tools and need the original data; it prints
+a warning on stderr, and formulas are still neutralized and lone surrogates still escaped. The CSV path is checked for writability
 before anything is printed.
 
 Terminal output is escaped: in table cells and in `error:`, `MANUAL`, `NOTE:` and log lines,
@@ -285,7 +286,7 @@ Tests run offline against demo data and a mocked HTTP session.
 | Code | Meaning |
 | --- | --- |
 | 0 | Success (including dry runs) |
-| 1 | Runtime error: Bitbucket or Crowd error, unknown repo or user, bad IdP file, file error, an `--apply` that stopped partway, an `offboard --apply` with MANUAL steps left, or an unexpected internal error (printed as an escaped traceback) |
+| 1 | Runtime error: Bitbucket or Crowd error, unknown repo or user, bad IdP file, file error, an `--apply` that stopped partway, an `offboard --apply` with MANUAL steps left, or an unexpected internal error (printed as a traceback with exception types only) |
 | 2 | Configuration or usage error: http refused, URL that is not a valid URL, has no hostname, or contains embedded credentials, a query string or a fragment, missing variable (for example `BBWARDEN_TOKEN`, `BBWARDEN_WORKSPACE`, Crowd credentials), `--idp csv` without `--idp-file`, an `--idp-file` that is not UTF-8, or invalid arguments |
 
 Errors are printed to stderr as `error: ...`.

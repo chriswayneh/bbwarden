@@ -61,6 +61,12 @@ class EscapingFormatter(logging.Formatter):
     with its arguments is escaped before formatting, so a name holding a newline cannot start
     a forged log line; only the formatter's own line breaks (tracebacks) remain."""
 
+    def __init__(self, *args, safe=True, **kwargs):
+        """safe=True (the default) shows exception types only in tracebacks, as SECURITY.md
+        promises: messages of unexpected exceptions could carry tokens or URLs."""
+        super().__init__(*args, **kwargs)
+        self.safe = safe
+
     def format(self, record):
         record = copy.copy(record)
         record.msg, record.args = escape(record.getMessage()), None
@@ -76,7 +82,7 @@ class EscapingFormatter(logging.Formatter):
         if exc is None:  # never instantiate the type: its __init__ may need arguments
             return escape(getattr(etype, "__name__", "Exception"))
         try:
-            return "\n".join(_exc_lines(exc))
+            return "\n".join(_exc_lines(exc, safe=self.safe))
         except (Exception, RecursionError):  # noqa: BLE001 - logging must never raise
             return escape(f"{type(exc).__name__}: <traceback unavailable>")
 
@@ -100,14 +106,18 @@ def _safe_str(x, fallback):
         return fallback
 
 
-def _exc_text(exc):
-    """'module.Type: message' plus any __notes__ (3.11+), as one escaped line."""
+def _exc_text(exc, safe=False):
+    """'module.Type: message' plus any __notes__ (3.11+), as one escaped line. safe=True
+    applies describe_error: our own BBWardenError keeps its message (written to be safe to
+    show), anything else shows its type only, without message or notes."""
     t = type(exc)
     name = (
         t.__qualname__
         if t.__module__ == "builtins"
         else f"{t.__module__}.{t.__qualname__}"
     )
+    if safe and not isinstance(exc, BBWardenError):
+        return escape(name)
     msg = _safe_str(exc, "<exception str() failed>")
     text = (
         f"{name}: {msg}" if msg else name
@@ -127,7 +137,7 @@ def _next_in_chain(exc):
     return None, None
 
 
-def _exc_lines(root):
+def _exc_lines(root, safe=False):
     """Traceback lines for root, its chain (oldest first) and ExceptionGroup members.
     Iterative with an explicit stack, so no exception shape can hit the recursion limit;
     chains and group nesting are cut at MAX_EXC_SHOWN with a "... more" line."""
@@ -169,7 +179,7 @@ def _exc_lines(root):
                         ("line", escape(ln), prefix, depth)
                         for ln in frame.rstrip("\n").split("\n")
                     ]
-            seq.append(("line", _exc_text(e), prefix, depth))
+            seq.append(("line", _exc_text(e, safe), prefix, depth))
             if group_type is not None and isinstance(e, group_type):
                 subs = list(e.exceptions)
                 if depth + 1 >= MAX_EXC_SHOWN:
@@ -346,10 +356,13 @@ def main(argv=None, env=None, **kw):
                 f"error: cannot open {escape(e.filename)}: {escape(e.strerror or e)}"
             )
         sys.exit(f"error: {escape(e.strerror or e)}")
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        sys.exit(130)
     except Exception as e:  # noqa: BLE001 - last resort: never a raw traceback
         print("error: unexpected internal error; details follow", file=sys.stderr)
         try:
-            lines = _exc_lines(e)
+            lines = _exc_lines(e, safe=True)  # frames kept, exception types only
         except (Exception, RecursionError):  # noqa: BLE001
             lines = [escape(f"{type(e).__name__}: <traceback unavailable>")]
         for ln in lines:

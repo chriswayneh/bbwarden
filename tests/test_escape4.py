@@ -13,7 +13,9 @@ FORGE = "\nbbwarden: ERROR forged"
 
 def log_to_stderr(exc_info):
     handler = logging.StreamHandler()
-    handler.setFormatter(cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s"))
+    handler.setFormatter(
+        cli.EscapingFormatter("bbwarden: %(levelname)s %(message)s", safe=False)
+    )
     log = logging.getLogger("bbwarden.test_escape4")
     log.addHandler(handler)
     try:
