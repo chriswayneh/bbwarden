@@ -319,6 +319,7 @@ def build_parser():
 
 
 EXIT_OK, EXIT_ERROR, EXIT_CONFIG = 0, 1, 2  # 2 also covers argparse usage errors
+EXIT_INCOMPLETE = 3  # finished, but part of the inventory could not be loaded
 
 
 def main(argv=None, env=None, **kw):
@@ -463,9 +464,17 @@ def _run(args, env, **kw):
         print(f"\n{note}")
     for n in ws.notes:
         print(f"NOTE: {escape(n)}", file=sys.stderr)
+    if ws.notes:  # every note is a part of the inventory that could not be loaded
+        print(
+            "INCOMPLETE: part of the inventory could not be loaded (see NOTE lines), so "
+            "these results may miss access; exit code 3",
+            file=sys.stderr,
+        )
     if args.csv:
         write_csv(rows, args.csv, cols, raw=args.raw_csv)
-    return 1 if ws.manual else 0
+    if ws.manual:
+        return EXIT_ERROR
+    return EXIT_INCOMPLETE if ws.notes else EXIT_OK
 
 
 if __name__ == "__main__":
