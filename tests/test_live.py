@@ -202,7 +202,7 @@ def test_crowd_orphans_live(capsys):
         ("GET", "/rest/usermanagement/1/user", F({("username", "dave")})): Resp(body={"active": False}),
     })
     env = {**DC_ENV, "CROWD_URL": "https://crowd.example.com/crowd", "CROWD_APP": "app",
-           "CROWD_PASSWORD": SECRET}
+           "CROWD_APP_PASSWORD": SECRET}
     main(["orphans", "--idp", "crowd"], env=env, session_factory=lambda *a: FakeSession(dc_routes()),
          crowd_session=lambda: crowd)
     out = capsys.readouterr().out

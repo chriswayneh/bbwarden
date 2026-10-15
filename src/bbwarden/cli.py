@@ -48,7 +48,7 @@ def write_csv(rows, path, cols):
 def get_ws(args, env=None, **kw):
     if args.demo:
         return demo_workspace(), None
-    backend = backend_from_env(env, **kw)
+    backend = backend_from_env(env, insecure=getattr(args, "insecure", False), **kw)
     return backend.load(), backend
 
 
@@ -58,6 +58,8 @@ def build_parser():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--demo", action="store_true", help="use built-in mock workspace")
     common.add_argument("--csv", metavar="OUT", help="also write results to CSV")
+    common.add_argument("--insecure", action="store_true",
+                        help="allow http:// for BBWARDEN_URL and CROWD_URL (local test servers only)")
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("who", parents=[common], help="effective access per person")
     s.add_argument("target", help="repo slug or project key")
@@ -130,7 +132,8 @@ def _run(args, env, **kw):
                 status = {u: v["active"] for u, v in ws.users.items()}
             else:
                 http_kw = {k: v for k, v in kw.items() if k not in ("session_factory", "crowd_session")}
-                crowd = crowd_from_env(env, session_factory=kw.get("crowd_session"), **http_kw)
+                crowd = crowd_from_env(env, session_factory=kw.get("crowd_session"),
+                                       insecure=args.insecure, **http_kw)
                 status = crowd_status(crowd, sorted({v.get('name') or u for u, v in ws.users.items()}))
             rows = core.orphans(ws, status)
         elif args.cmd == "regroup":

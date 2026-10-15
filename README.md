@@ -72,11 +72,11 @@ Set credentials in the environment (never on the command line):
 
 | Variable | Meaning |
 | --- | --- |
-| `BBWARDEN_URL` | `https://bitbucket.org` for Cloud, or your Data Center base URL. Must be `https://`. |
+| `BBWARDEN_URL` | `https://bitbucket.org` for Cloud, or your Data Center base URL. Must be `https://` (see `--insecure`). |
 | `BBWARDEN_USER` | Username (Cloud: account username or email; Data Center: user or service account) |
 | `BBWARDEN_TOKEN` | Cloud app password or API token; Data Center HTTP access token or password |
 | `BBWARDEN_WORKSPACE` | Cloud only: workspace slug |
-| `CROWD_URL`, `CROWD_APP`, `CROWD_PASSWORD` | `--idp crowd` only: Crowd base URL and application credentials |
+| `CROWD_URL`, `CROWD_APP`, `CROWD_APP_PASSWORD` | `--idp crowd` only: Crowd base URL and application credentials. The old name `CROWD_PASSWORD` still works but prints a deprecation warning; `CROWD_APP_PASSWORD` wins if both are set. |
 
 Read commands need admin read on the projects and repos you scan (Data Center user
 status also needs system admin read). `--apply` needs admin write.
@@ -109,7 +109,10 @@ Hardening:
   `offboard` accepts an account_id or a nickname; a nickname shared by several accounts is
   refused, so pass the account_id.
 - Cloud is detected only when the `BBWARDEN_URL` hostname is exactly `bitbucket.org` or
-  `api.bitbucket.org`. Plain `http://` is allowed only for `localhost` and `127.0.0.1`.
+  `api.bitbucket.org`.
+- `BBWARDEN_URL` and `CROWD_URL` must be `https://` for every host, loopback included.
+  `--insecure` allows `http://` for a local test server and prints a warning on stderr.
+  There is no automatic localhost exception, so plain http is always an explicit choice.
 - Pagination links must match the base URL scheme, host and port.
 - Rate-limit retries apply only to idempotent methods (GET, PUT, DELETE). A POST that gets
   429 or 503 is not retried; check the state and re-run.
@@ -215,6 +218,11 @@ pytest -q
 ```
 
 Tests run offline against demo data and a mocked HTTP session.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately, supported
+versions and the security design.
 
 ## License
 

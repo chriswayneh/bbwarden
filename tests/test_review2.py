@@ -106,17 +106,11 @@ def test_cloud_unknown_user_fails_instead_of_guessing():
         be.remove_member("devs", "nobody")
 
 
-# 4 http allowed only for exact localhost / 127.0.0.1
-@pytest.mark.parametrize("url,ok", [("http://localhost:7990", True), ("http://127.0.0.1", True),
-                                    ("http://localhost.evil.com", False), ("http://localhostx", False),
-                                    ("http://example.com", False), ("https://example.com", True)])
-def test_http_only_for_loopback(url, ok):
-    env = {**ENV, "BBWARDEN_URL": url}
-    if ok:
-        assert creds_from_env(env)[0] == url
-    else:
-        with pytest.raises(BBWardenError, match="https"):
-            creds_from_env(env)
+# 4 superseded by secure-defaults: http needs --insecure for every host (tests/test_secure.py)
+@pytest.mark.parametrize("url", ["http://localhost.evil.com", "http://localhostx", "http://example.com"])
+def test_http_refused_by_default(url):
+    with pytest.raises(BBWardenError, match="https"):
+        creds_from_env({**ENV, "BBWARDEN_URL": url})
 
 
 # 5 unknown permission is manual in regroup

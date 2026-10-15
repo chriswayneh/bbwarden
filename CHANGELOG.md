@@ -4,6 +4,22 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `--insecure` flag to allow `http://` for `BBWARDEN_URL` and `CROWD_URL` (local test servers),
+  with a warning on stderr.
+- `CROWD_APP_PASSWORD`, matching crowdkeeper.
+- SECURITY.md: private vulnerability reporting, supported versions, security design notes.
+
+### Changed
+- `http://` is refused for every host unless `--insecure` is given. This replaces the
+  automatic `localhost` and `127.0.0.1` exception.
+
+### Deprecated
+- `CROWD_PASSWORD`: still accepted with a warning on stderr. `CROWD_APP_PASSWORD` wins when
+  both are set.
+
 ## [0.2.0] - 2026-10-15
 
 ### Added

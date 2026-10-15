@@ -1,5 +1,6 @@
 """Live Bitbucket backends (Cloud and Data Center) built on atlassian-python-api sessions."""
 import os
+import sys
 from urllib.parse import urlsplit
 
 from .http import AuthError, BBWardenError, Http, ManualStep
@@ -29,16 +30,27 @@ def _perm(table, raw):
     return table.get(raw, str(raw).upper())
 
 
-def creds_from_env(env=None):
+def require_https(name, url, insecure):
+    """https only. Plain http (any host, loopback included) needs --insecure and warns."""
+    scheme = urlsplit(url).scheme.lower()
+    if scheme == "https":
+        return
+    if scheme == "http" and insecure:
+        print(f"WARNING: --insecure: {name} uses http://, so credentials are sent in clear text",
+              file=sys.stderr)
+        return
+    raise BBWardenError(f"{name} must use https:// so credentials are not sent in clear text "
+                        "(pass --insecure to allow http:// for a local test server)")
+
+
+def creds_from_env(env=None, insecure=False):
     env = os.environ if env is None else env
     url, user, token = env.get("BBWARDEN_URL"), env.get("BBWARDEN_USER"), env.get("BBWARDEN_TOKEN")
     missing = [n for n, v in (("BBWARDEN_URL", url), ("BBWARDEN_USER", user),
                               ("BBWARDEN_TOKEN", token)) if not v]
     if missing:
         raise AuthError(f"missing {', '.join(missing)}: set them in the environment or use --demo")
-    u = urlsplit(url)
-    if not (u.scheme == "https" or (u.scheme == "http" and u.hostname in ("localhost", "127.0.0.1"))):
-        raise BBWardenError("BBWARDEN_URL must use https:// so credentials are not sent in clear text")
+    require_https("BBWARDEN_URL", url, insecure)
     return url, user, token
 
 
@@ -244,9 +256,9 @@ def is_cloud(url):
     return (urlsplit(url).hostname or "").lower() in CLOUD_HOSTS
 
 
-def backend_from_env(env=None, session_factory=make_session, **http_kw):
+def backend_from_env(env=None, session_factory=make_session, insecure=False, **http_kw):
     env = os.environ if env is None else env
-    url, user, token = creds_from_env(env)
+    url, user, token = creds_from_env(env, insecure)
     cloud = is_cloud(url)
     if cloud:
         w = env.get("BBWARDEN_WORKSPACE")
@@ -257,12 +269,26 @@ def backend_from_env(env=None, session_factory=make_session, **http_kw):
     return DataCenter(Http(session_factory(url, user, token, False), url, **http_kw))
 
 
-def crowd_from_env(env=None, session_factory=None, **http_kw):
+def crowd_creds(env=None):
+    """CROWD_URL, CROWD_APP and CROWD_APP_PASSWORD. The old CROWD_PASSWORD still works with a
+    deprecation warning; CROWD_APP_PASSWORD wins when both are set."""
     env = os.environ if env is None else env
-    url, app, pw = env.get("CROWD_URL"), env.get("CROWD_APP"), env.get("CROWD_PASSWORD")
+    url, app = env.get("CROWD_URL"), env.get("CROWD_APP")
+    pw = env.get("CROWD_APP_PASSWORD")
+    if env.get("CROWD_PASSWORD"):
+        print("WARNING: CROWD_PASSWORD is deprecated; use CROWD_APP_PASSWORD"
+              + (" (ignoring CROWD_PASSWORD because CROWD_APP_PASSWORD is set)" if pw else ""),
+              file=sys.stderr)
+        pw = pw or env.get("CROWD_PASSWORD")
     if not (url and app and pw):
-        raise AuthError("--idp crowd needs CROWD_URL, CROWD_APP and CROWD_PASSWORD (Crowd application "
-                        "credentials), or use --idp csv")
+        raise AuthError("--idp crowd needs CROWD_URL, CROWD_APP and CROWD_APP_PASSWORD (Crowd "
+                        "application credentials), or use --idp csv")
+    return url, app, pw
+
+
+def crowd_from_env(env=None, session_factory=None, insecure=False, **http_kw):
+    url, app, pw = crowd_creds(env)
+    require_https("CROWD_URL", url, insecure)
     if session_factory is None:  # pragma: no cover
         import requests
         s = requests.Session()
