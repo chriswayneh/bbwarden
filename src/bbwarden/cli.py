@@ -268,7 +268,14 @@ def write_csv(rows, path, cols, raw=False):
     never leaves a truncated file and never destroys the previous one. A symlink is
     followed, so its target is updated and the link stays a link. The temporary file is
     owner-only (0o600) while rows are written and gets its final mode just before the
-    rename: the existing file's mode, or 0o666 minus the umask for a new file."""
+    rename: the existing file's mode, or 0o666 minus the umask for a new file.
+    An existing target that is not a regular file (a FIFO, /dev/stdout, /dev/fd/N, a
+    character device) is written directly: it cannot be replaced by a rename."""
+    if _is_special(path):
+        sys.stdout.flush()  # /dev/stdout: keep the table before the CSV
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            _write_rows(f, rows, cols, raw)
+        return
     real = os.path.realpath(path)
     if os.path.isdir(real):
         raise IsADirectoryError(21, "Is a directory", path)
@@ -285,14 +292,28 @@ def write_csv(rows, path, cols, raw=False):
         raise
     try:
         with f:
-            wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
-            wr.writeheader()
-            wr.writerows({c: _safe_cell(r.get(c, ""), raw) for c in cols} for r in rows)
+            _write_rows(f, rows, cols, raw)
         os.chmod(tmp, mode)
         os.replace(tmp, real)
     except BaseException:
         _remove_quietly(tmp)
         raise
+
+
+def _write_rows(f, rows, cols, raw):
+    wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+    wr.writeheader()
+    wr.writerows({c: _safe_cell(r.get(c, ""), raw) for c in cols} for r in rows)
+
+
+def _is_special(path):
+    """True for an existing target (symlinks followed) that is neither a regular file nor
+    a directory, for example a FIFO or a character device."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    return not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode))
 
 
 def _remove_quietly(p):
@@ -453,6 +474,10 @@ def _check_writable(path):
     """Fail before any output if the CSV path cannot be written. Never creates, truncates
     or removes the target itself: an existing file is opened for append only, and the
     directory is probed with a temporary sibling (write_csv renames one into place)."""
+    if _is_special(path):  # opening a FIFO here would block or eat the reader's EOF
+        if not os.access(path, os.W_OK):
+            raise PermissionError(13, "Permission denied", path)
+        return
     real = os.path.realpath(path)  # a symlink: the target and its folder are what count
     if os.path.isdir(real):
         raise IsADirectoryError(21, "Is a directory", path)
