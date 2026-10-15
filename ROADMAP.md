@@ -59,6 +59,7 @@ Plan for bbwarden by phase. Each phase ships something you can run from the comm
 - [x] One-line `error:` messages for auth, URL and permission failures, no tracebacks (`v0.2.0`)
 - [x] Documented exit codes, including partial apply (`v0.2.1`)
 - [x] https only (`--insecure` to allow http), redirects never followed, no credentials, query or fragment in `BBWARDEN_URL`/`CROWD_URL` (`v0.2.1`)
+- [ ] Escaped terminal output (control and bidi characters shown as code points) and CSV formula guard that sees through invisible leading characters (`v0.2.2`, in PR)
 - [x] `--apply` reports which steps finished, failed and were not run (`v0.2.0`)
 - [ ] Warn before removing a user's last admin path
 - [x] CSV formula injection escaped (`v0.2.0`)
