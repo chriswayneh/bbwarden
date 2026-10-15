@@ -171,7 +171,7 @@ class _PipeBuffer:
 
 
 @pytest.mark.parametrize("fail_on", ["write", "flush"])
-def test_broken_pipe_propagates_and_leaves_stdout_buffer_open(monkeypatch, fail_on):
+def test_broken_pipe_reported_and_leaves_stdout_buffer_open(monkeypatch, fail_on):
     import gc
 
     class Out:
@@ -186,7 +186,7 @@ def test_broken_pipe_propagates_and_leaves_stdout_buffer_open(monkeypatch, fail_
 
     out = Out()
     monkeypatch.setattr(sys, "stdout", out)
-    with pytest.raises(BrokenPipeError):
-        cli._write_to_stdout([{"user": "x"}], ["user"], False)
+    # Since QE round 4 the error is handled by stdout_call (exit 141 later), not raised.
+    assert cli._write_to_stdout([{"user": "x"}], ["user"], False) == "pipe"
     gc.collect()  # a dropped wrapper that could not detach closes the buffer here
     assert out.buffer.closed is False

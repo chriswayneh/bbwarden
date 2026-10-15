@@ -265,7 +265,7 @@ def table(rows, cols):
 
 
 def write_csv(rows, path, cols, raw=False):
-    """UTF-8, always with the header row, even with no rows. See _safe_cell for raw.
+    """Returns the stdout state ("ok", "pipe" or "error", see stdout_call). UTF-8, always with the header row, even with no rows. See _safe_cell for raw.
     Written to a temporary sibling and renamed over the target, so a failed write
     never leaves a truncated file and never destroys the previous one. A symlink is
     followed, so its target is updated and the link stays a link. The temporary file is
@@ -274,14 +274,13 @@ def write_csv(rows, path, cols, raw=False):
     An existing target that is not a regular file (a FIFO, /dev/stdout, /dev/fd/N, a
     character device) is written directly: it cannot be replaced by a rename."""
     if _is_stdout(path):  # `--csv out.csv > out.csv`: append after the table, no rename
-        _write_to_stdout(rows, cols, raw)
-        return
+        return _write_to_stdout(rows, cols, raw)
     _refuse_socket(path)
     if _is_special(path):
-        sys.stdout.flush()  # /dev/stdout: keep the table before the CSV
+        state = flush_stdout()  # keep the table before the CSV (/dev/tty and the like)
         with open(path, "w", newline="", encoding="utf-8") as f:
             _write_rows(f, rows, cols, raw)
-        return
+        return state
     real = os.path.realpath(path)
     if os.path.isdir(real):
         raise IsADirectoryError(21, "Is a directory", path)
@@ -304,6 +303,7 @@ def write_csv(rows, path, cols, raw=False):
     except BaseException:
         _remove_quietly(tmp)
         raise
+    return "ok"
 
 
 def _write_rows(f, rows, cols, raw):
@@ -324,19 +324,23 @@ def _is_special(path):
 
 def _write_to_stdout(rows, cols, raw):
     """CSV through stdout, still UTF-8 with \r\n rows whatever the console encoding:
-    built in memory and written as UTF-8 bytes to stdout's byte buffer. No wrapper is
-    put around the buffer, so an error (for example a broken pipe) can never close it.
-    A stdout without a byte buffer (a StringIO) gets the text as is."""
-    sys.stdout.flush()  # the table goes first
+    built in memory and written as UTF-8 bytes to stdout's byte buffer (text if there
+    is no buffer). No wrapper is put around the buffer, so nothing can close it. Goes
+    through stdout_call; returns its "ok", "pipe" or "error"."""
     text = io.StringIO(newline="")
     _write_rows(text, rows, cols, raw)
-    buf = getattr(sys.stdout, "buffer", None)
-    if buf is None:
-        sys.stdout.write(text.getvalue())
-        sys.stdout.flush()
-        return
-    buf.write(text.getvalue().encode("utf-8"))
-    buf.flush()
+
+    def write(out):
+        out.flush()  # the table goes first
+        buf = getattr(out, "buffer", None)
+        if buf is None:
+            out.write(text.getvalue())
+            out.flush()
+        else:
+            buf.write(text.getvalue().encode("utf-8"))
+            buf.flush()
+
+    return stdout_call(write)
 
 
 def _is_stdout(path):
@@ -481,15 +485,57 @@ def is_pipe_error(e):
     return e.errno == errno.EPIPE or (os.name == "nt" and e.errno == errno.EINVAL)
 
 
-def after_final_flush_break(code):
-    """The break showed up only at the final flush: keep 1, 2 or 3, else 141."""
-    stdout_to_devnull()
-    return (
-        code if code in (EXIT_ERROR, EXIT_CONFIG, EXIT_INCOMPLETE) else EXIT_BROKEN_PIPE
-    )
+def stdout_call(fn):
+    """The one place that touches stdout. Runs fn(sys.stdout) and returns "ok", "pipe"
+    (the reader is gone) or "error" (any other write error, reported once on stderr).
+    On a failure stdout is pointed at os.devnull, so no later write and no flush at exit
+    can raise again ("Exception ignored ...", exit 120). A missing stdout (`>&-`, so
+    sys.stdout is None) or an already closed one is skipped."""
+    out = sys.stdout
+    if out is None:
+        return "ok"
+    try:
+        fn(out)
+        return "ok"
+    except ValueError:  # I/O on a closed file object
+        return "ok"
+    except OSError as e:
+        stdout_to_devnull()
+        if is_pipe_error(e):
+            return "pipe"
+        print(
+            f"error: cannot write to stdout: {escape(e.strerror or e)}", file=sys.stderr
+        )
+        return "error"
+
+
+def flush_stdout():
+    return stdout_call(lambda out: out.flush())
+
+
+def final_code(code, state):
+    """Exit code after the last stdout flush. A gone reader only turns success into 141;
+    an unwritable stdout turns success, 3 and 141 into 1. 2, 1, 130 and error messages
+    (sys.exit("error: ...")) always win."""
+    if state == "pipe" and code in (EXIT_OK, None):
+        return EXIT_BROKEN_PIPE
+    if state == "error" and code in (EXIT_OK, None, EXIT_INCOMPLETE, EXIT_BROKEN_PIPE):
+        return EXIT_ERROR
+    return code
 
 
 def main(argv=None, env=None, **kw):
+    """Run bbwarden, then flush stdout through stdout_call on every way out (normal
+    return, sys.exit from argparse --help/--version or an error, Ctrl-C), so a closed or
+    unwritable stdout gives 141 or 1 instead of a traceback or exit 120."""
+    try:
+        code = _main(argv, env, **kw)
+    except SystemExit as e:
+        raise SystemExit(final_code(e.code, flush_stdout())) from None
+    return final_code(code, flush_stdout())
+
+
+def _main(argv=None, env=None, **kw):
     try:  # Ctrl-C while argparse runs: same exit 130 as later, never a traceback
         args = build_parser().parse_args(argv)
     except KeyboardInterrupt:
@@ -500,14 +546,7 @@ def main(argv=None, env=None, **kw):
         handler.setFormatter(EscapingFormatter("bbwarden: %(levelname)s %(message)s"))
         logging.basicConfig(level=logging.WARNING, handlers=[handler])
     try:
-        code = _run(args, env, **kw)
-        try:
-            sys.stdout.flush()  # a closed reader may show up only here
-        except OSError as e:
-            if not is_pipe_error(e):
-                raise
-            return after_final_flush_break(code)
-        return code
+        return _run(args, env, **kw)
     except ConfigError as e:
         print(f"error: {escape(e)}", file=sys.stderr)
         sys.exit(EXIT_CONFIG)
@@ -675,39 +714,34 @@ def _run(args, env, **kw):
         )
     if args.csv:
         try:
-            write_csv(rows, args.csv, cols, raw=args.raw_csv)
-        except OSError as e:  # a FIFO or /dev/stdout reader left
+            state = write_csv(rows, args.csv, cols, raw=args.raw_csv)
+        except OSError as e:  # a FIFO reader left
             if not is_pipe_error(e):
                 raise
-            stdout_to_devnull()
-            out.broken = True
+            state = "pipe"
+        out.merge(state)
     # Precedence: 2 (raised earlier), then 1, then 3, then 141, then 0.
-    if ws.manual:
+    if ws.manual or out.state == "error":
         return EXIT_ERROR
     if ws.notes:
         return EXIT_INCOMPLETE
-    return EXIT_BROKEN_PIPE if out.broken else EXIT_OK
+    return EXIT_BROKEN_PIPE if out.state == "pipe" else EXIT_OK
 
 
 class _Stdout:
-    """stdout that survives its reader leaving: the rest of the run (stderr reports,
-    CSV, exit code) goes on, and the broken pipe only decides the code if nothing
-    stronger does."""
+    """stdout output of one run. After a failure (see stdout_call) the rest of the run
+    (stderr reports, CSV, exit code) goes on and later stdout writes are skipped."""
 
     def __init__(self):
-        self.broken = False
+        self.state = "ok"
+
+    def merge(self, state):
+        if self.state == "ok":
+            self.state = state
 
     def print(self, text):
-        if self.broken:
-            return
-        try:
-            print(text)
-            sys.stdout.flush()
-        except OSError as e:
-            if not is_pipe_error(e):
-                raise
-            stdout_to_devnull()
-            self.broken = True
+        if self.state == "ok":
+            self.state = stdout_call(lambda out: (print(text, file=out), out.flush()))
 
 
 if __name__ == "__main__":
