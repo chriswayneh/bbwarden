@@ -31,8 +31,9 @@ version, and the CHANGELOG Security section describes them.
   and prints a warning on stderr. Use it only for a local test server. A URL without a
   hostname (for example `https://` or `https:x`) is always refused.
 - **No redirects (since 0.2.1).** Every request is sent with redirects disabled, and the
-  sessions allow zero redirects. A 3xx response is an error that names only the status and
-  the target host, so credentials are never replayed to another origin or over http.
+  sessions allow zero redirects. A 3xx response, whether requests or bbwarden sees it, is an
+  error (`redirect refused: <status> to <host>`) that names only the status and the target
+  host, so credentials are never replayed to another origin or over http.
 - **Exact Cloud detection.** Credentials go to Bitbucket Cloud only when the hostname is
   exactly `bitbucket.org` or `api.bitbucket.org`. Pagination links must match the base URL
   scheme, host and port, so credentials never follow a link to another origin.

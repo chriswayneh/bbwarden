@@ -114,8 +114,9 @@ Hardening:
   `--insecure` allows `http://` for a local test server and prints a warning on stderr.
   There is no automatic localhost exception, so plain http is always an explicit choice.
   A URL without a hostname (`https://`, `https:x`) is refused.
-- Redirects are never followed. A 3xx response stops the run with an error naming only the
-  status and the target host; set the URL to the final `https://` address.
+- Redirects are never followed. A 3xx response stops the run with
+  `error: redirect refused: <status> to <host> ...`, naming only the status and the target
+  host (never the path or query); set the URL to the final `https://` address.
 - Pagination links must match the base URL scheme, host and port.
 - Rate-limit retries apply only to idempotent methods (GET, PUT, DELETE). A POST that gets
   429 or 503 is not retried; check the state and re-run.

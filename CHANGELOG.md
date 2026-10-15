@@ -22,7 +22,8 @@ All notable changes to bbwarden are listed here. The format follows
 ### Security
 - HTTP redirects are refused on every Bitbucket and Crowd request (`allow_redirects=False`
   and `max_redirects=0` on the sessions). A 3xx response, or a response that was redirected
-  anyway, is an error naming only the status and the target host.
+  anyway, is an error (`redirect refused: <status> to <host>`) naming only the status and
+  the target host.
 
 ### Deprecated
 - `CROWD_PASSWORD`: still accepted, with a deprecation warning on stderr when it is used. If

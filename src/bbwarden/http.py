@@ -4,6 +4,8 @@ import time
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
 
+import requests
+
 RETRY_STATUS = (429, 503)
 
 
@@ -59,6 +61,13 @@ def _origin(url):
     return scheme, (u.hostname or "").lower(), u.port or {"https": 443, "http": 80}.get(scheme)
 
 
+def _redirect_error(status, location, where):
+    """Status and target hostname only: never the path, query or credentials."""
+    host = urlsplit(location or "").hostname or "unknown host"
+    return BBWardenError(f"redirect refused: {status} to {host} on {where}; set the URL to the "
+                         "final https:// address", status)
+
+
 class Http:
     def __init__(self, session, base_url, max_retries=5, base_delay=1.0, max_delay=60.0,
                  sleep=time.sleep, timeout=30):
@@ -84,6 +93,12 @@ class Http:
         for attempt in range(self.max_retries + 1):
             try:
                 resp = self.session.request(method, url, **kw)
+            except requests.TooManyRedirects as e:
+                # Sessions have max_redirects=0, so a redirect seen by requests itself lands here.
+                r = e.response
+                status = r.status_code if r is not None else None
+                loc = r.headers.get("Location", "") if r is not None else ""
+                raise _redirect_error(status, loc, f"{method} {_safe_url(url)}") from None
             except OSError as e:  # requests exceptions subclass IOError
                 raise BBWardenError(f"network error on {method} {_safe_url(url)}: "
                                     f"{type(e).__name__}") from None
@@ -102,10 +117,8 @@ class Http:
         if 300 <= code < 400 or history or (isinstance(final, str) and final
                                              and _origin(final) != _origin(url)):
             loc = resp.headers.get("Location") or (final if isinstance(final, str) else "") or ""
-            host = urlsplit(loc).hostname or "unknown host"
             shown = code if 300 <= code < 400 else history[0].status_code if history else code
-            raise BBWardenError(f"HTTP {shown} redirect on {where} to {host}: redirects are refused; "
-                                "set the URL to the final https:// address", shown)
+            raise _redirect_error(shown, loc, where)
         if code == 401:
             raise AuthError(f"401 Unauthorized on {where}: check BBWARDEN_USER and BBWARDEN_TOKEN "
                             "(Cloud: app password or API token; Data Center: HTTP access token)", 401)

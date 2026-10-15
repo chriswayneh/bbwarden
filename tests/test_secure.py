@@ -151,7 +151,7 @@ def test_bitbucket_redirect_refused(loc, host):
 def test_crowd_redirect_refused(loc):
     sess = FakeSession({("GET", "/rest/usermanagement/1/user", None): Resp(302, headers={"Location": loc})})
     crowd = live.crowd_from_env(crowd_env(CROWD_APP_PASSWORD="p"), session_factory=lambda: sess)
-    with pytest.raises(BBWardenError, match="302 redirect"):
+    with pytest.raises(BBWardenError, match="redirect refused: 302"):
         live.crowd_status(crowd, ["bob"])
     assert sess.allow_redirects is False
 
