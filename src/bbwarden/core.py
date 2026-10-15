@@ -181,7 +181,7 @@ FALSE = ("false", "0", "no", "inactive", "disabled")
 def load_idp_csv(path):
     """Strict CSV with columns user,active. Bad rows raise BadIdpFile with the line number."""
     out = {}
-    with open(path, newline="") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         rd = csv.DictReader(f)
         if not rd.fieldnames or not {"user", "active"} <= {
             c.strip() for c in rd.fieldnames
@@ -304,7 +304,7 @@ def _run_steps(steps):
             fn()
         except Exception as e:
             log.error(
-                "apply failed at step %r after %d finished: %s",
+                "apply failed at step %s after %d finished: %s",
                 label,
                 len(done),
                 describe_error(e),
@@ -427,7 +427,7 @@ def apply_offboard(ws, user, plan, backend=None):
             continue
         except Exception as e:
             log.error(
-                "apply failed at step %r after %d finished: %s",
+                "apply failed at step %s after %d finished: %s",
                 lab(s),
                 len(done),
                 describe_error(e),

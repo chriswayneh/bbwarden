@@ -20,7 +20,8 @@ version, and the CHANGELOG Security section describes them.
 
 | Version | Supported |
 | --- | --- |
-| 0.2.1 | Yes (https only, redirects refused) |
+| 0.2.2 | Yes (https only, redirects refused, terminal output escaped) |
+| 0.2.1 | No: upgrade to 0.2.2 (names with control characters reached the terminal raw) |
 | 0.2.0 | No: upgrade to 0.2.1 (it allowed http:// to localhost and followed redirects) |
 | 0.1.x | No (demo only, no live hardening) |
 
@@ -47,6 +48,15 @@ version, and the CHANGELOG Security section describes them.
 - **Dry run by default.** `regroup` and `offboard` only print a plan unless you pass `--apply`.
   `regroup` never picks a group whose grant would widen anyone's access. On failure, `--apply`
   reports exactly which steps finished, failed and were not run.
-- **Safe exports.** CSV output neutralizes spreadsheet formulas.
+- **Safe exports.** CSV output neutralizes spreadsheet formulas, also behind leading
+  invisible characters, and escapes control and format characters like terminal output
+  (since 0.2.2). `--raw-csv` keeps them, with a warning; formulas are still neutralized.
+- **No raw tracebacks (since 0.2.2).** An unexpected error prints a traceback with exception
+  types only (no messages, notes or arguments that could carry secrets) and exits 1; log
+  tracebacks are rendered the same way. Ctrl-C prints `interrupted` and exits 130; a
+  non-UTF-8 `--idp-file` is a configuration error (exit 2).
+- **Escaped terminal output (since 0.2.2).** Table cells and stderr lines print control and
+  format characters (C0, DEL, C1, Unicode Cc, Cf, Cs, Co, Cn, Zl, Zp) as escaped code points,
+  never raw; backslashes are doubled and log messages are escaped with their arguments.
 - **Least privilege.** Read commands need admin read only. Parts that need more rights (global
   admins, workspace owners) are skipped with a `NOTE:` instead of failing.

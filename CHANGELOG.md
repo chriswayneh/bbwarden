@@ -4,6 +4,37 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-10-15
+
+### Security
+- Table cells and every stderr line built from data (`error:`, `MANUAL`, `NOTE:`, apply
+  reports and log lines) escape control and format characters: C0, DEL, C1 and Unicode
+  categories Cc, Cf and Cs are printed as escaped code points (for example `\x1b`, `\u202e`).
+  A repo, user, group or IdP name can no longer inject terminal escape sequences or bidi
+  overrides. CSV output keeps the original data. Line and paragraph separators (U+2028,
+  U+2029), private-use and unassigned code points are escaped too, and a backslash is shown
+  as `\\` so literal text cannot pass for an escape. Log messages are escaped with their
+  arguments, and tracebacks line by line with each exception message and its notes
+  escaped as one unit (chained exceptions and ExceptionGroup included; chains, group
+  nesting and members per group are cut at 50 and rendering can never make a log call
+  fail), so a newline in a name or error cannot forge a log line. argparse errors are
+  escaped.
+  Table columns are aligned by display width (wide characters 2; combining,
+  nonspacing and enclosing marks, including variation selectors, 0).
+- The CSV formula guard skips leading control and format characters (for example `\u200b`
+  or `\x1b`) before checking for `=`, `+`, `-` or `@`, so `\u200b=cmd` is neutralized.
+- CSV cells are escaped like terminal output by default (ESC, OSC 8 links, U+202E, U+2028,
+  U+2029 and C1 never raw); the file is written as UTF-8. New `--raw-csv` on every command
+  keeps the original characters, prints a warning, and still neutralizes formulas. Lone
+  surrogates are escaped in both modes, so they no longer crash `--csv`.
+- An `--idp-file` that is not UTF-8 is a clean configuration error (exit 2) instead of a
+  traceback; a UTF-8 BOM is accepted. Any other unexpected error prints a traceback
+  with frame lines and exception types only (no messages or notes, which could carry
+  secrets) and exits 1; log tracebacks use the same type-only rendering. Ctrl-C prints
+  `interrupted` and exits 130.
+- Log lines name the failed step without quotes, escaped once.
+- `requests>=2.32.4` (fixes CVE-2024-47081, .netrc credential leak).
+
 ## [0.2.1] - 2026-10-15
 
 ### Added

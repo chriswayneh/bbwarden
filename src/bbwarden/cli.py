@@ -1,8 +1,12 @@
 import argparse
+import builtins
+import copy
 import csv
 import logging
 import os
 import sys
+import traceback
+import unicodedata
 
 from . import __version__, core
 from .http import BBWardenError, ConfigError
@@ -21,30 +25,245 @@ COLUMNS = {
 FORMULA = ("=", "+", "-", "@", "\t", "\r")
 
 
-def _safe_cell(v):
-    """Neutralize spreadsheet formulas (CSV injection) by prefixing a single quote,
-    also when the formula follows leading whitespace."""
+# Cc control, Cf format (bidi overrides, zero-width), Cs lone surrogates, Co private use,
+# Cn unassigned, Zl/Zp line and paragraph separators (U+2028, U+2029).
+_UNSAFE = ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp")
+
+
+def _is_control(c):
+    """C0, DEL, C1, and the Unicode categories in _UNSAFE."""
+    o = ord(c)
+    return o < 0x20 or 0x7F <= o <= 0x9F or unicodedata.category(c) in _UNSAFE
+
+
+def escape(s):
+    """Text safe for a terminal: every control or format character becomes its escaped code
+    point (\\x1b, \\u202e, \\U000e0001), so names from Bitbucket or an IdP cannot move the
+    cursor, set the title, clear the screen or reorder text. Used for every table cell and
+    every stderr line built from data."""
+    out = []
+    for c in str(s):
+        if c == "\\":  # so a literal "\\x1b" in a name cannot pass for an escaped ESC
+            out.append("\\\\")
+        elif not _is_control(c):
+            out.append(c)
+        elif ord(c) <= 0xFF:
+            out.append(f"\\x{ord(c):02x}")
+        elif ord(c) <= 0xFFFF:
+            out.append(f"\\u{ord(c):04x}")
+        else:
+            out.append(f"\\U{ord(c):08x}")
+    return "".join(out)
+
+
+class EscapingFormatter(logging.Formatter):
+    """Log lines go to stderr too, and step labels carry names from the server. The message
+    with its arguments is escaped before formatting, so a name holding a newline cannot start
+    a forged log line; only the formatter's own line breaks (tracebacks) remain."""
+
+    def __init__(self, *args, safe=True, **kwargs):
+        """safe=True (the default) shows exception types only in tracebacks, as SECURITY.md
+        promises: messages of unexpected exceptions could carry tokens or URLs."""
+        super().__init__(*args, **kwargs)
+        self.safe = safe
+
+    def format(self, record):
+        record = copy.copy(record)
+        record.msg, record.args = escape(record.getMessage()), None
+        record.exc_text = None  # never reuse text cached by another formatter
+        return super().format(record)
+
+    def formatException(self, ei):
+        """Rendered by _exc_lines, not traceback.format_exception: frame, source and chain
+        separator lines stay real lines (each escaped), while the exception text with its
+        notes is escaped as one unit, so a newline in a message or note shows as \\x0a and
+        cannot start a forged log line. Same output on Python 3.9 to 3.13."""
+        etype, exc = ei[0], ei[1]
+        if exc is None:  # never instantiate the type: its __init__ may need arguments
+            return escape(getattr(etype, "__name__", "Exception"))
+        try:
+            return "\n".join(_exc_lines(exc, safe=self.safe))
+        except (Exception, RecursionError):  # noqa: BLE001 - logging must never raise
+            return escape(f"{type(exc).__name__}: <traceback unavailable>")
+
+    def formatStack(self, stack_info):
+        return "\n".join(escape(ln) for ln in stack_info.split("\n"))
+
+
+_CAUSE = "The above exception was the direct cause of the following exception:"
+_CONTEXT = "During handling of the above exception, another exception occurred:"
+
+
+MAX_EXC_SHOWN = (
+    50  # chained exceptions, ExceptionGroup nesting levels and members shown
+)
+
+
+def _safe_str(x, fallback):
+    try:
+        return str(x)
+    except Exception:  # noqa: BLE001 - a broken __str__ must not break logging
+        return fallback
+
+
+def _exc_text(exc, safe=False):
+    """'module.Type: message' plus any __notes__ (3.11+), as one escaped line. safe=True
+    applies describe_error: our own BBWardenError keeps its message (written to be safe to
+    show), anything else shows its type only, without message or notes."""
+    t = type(exc)
+    name = (
+        t.__qualname__
+        if t.__module__ == "builtins"
+        else f"{t.__module__}.{t.__qualname__}"
+    )
+    if safe and not isinstance(exc, BBWardenError):
+        return escape(name)
+    msg = _safe_str(exc, "<exception str() failed>")
+    text = (
+        f"{name}: {msg}" if msg else name
+    )  # ExceptionGroup str() has "(N sub-exceptions)"
+    notes = getattr(exc, "__notes__", None)
+    if isinstance(notes, (list, tuple)):
+        text = "\n".join([text] + [_safe_str(n, "<note str() failed>") for n in notes])
+    return escape(text)
+
+
+def _next_in_chain(exc):
+    """(older exception, separator) or (None, None), like the standard traceback."""
+    if exc.__cause__ is not None:
+        return exc.__cause__, _CAUSE
+    if exc.__context__ is not None and not exc.__suppress_context__:
+        return exc.__context__, _CONTEXT
+    return None, None
+
+
+def _exc_lines(root, safe=False):
+    """Traceback lines for root, its chain (oldest first) and ExceptionGroup members.
+    Iterative with an explicit stack, so no exception shape can hit the recursion limit;
+    chains and group nesting are cut at MAX_EXC_SHOWN with a "... more" line."""
+    group_type = getattr(builtins, "BaseExceptionGroup", None)
+    seen: set = set()
+    out: list = []
+    # Work items: ("line", text, prefix, depth) or ("exc", exception, prefix, depth).
+    stack: list = [("exc", root, "", 0)]
+    while stack:
+        kind, item, prefix, depth = stack.pop()
+        if kind == "line":
+            out.append(prefix + item)
+            continue
+        chain: list = []
+        seps: list = []
+        exc = item
+        while exc is not None and id(exc) not in seen and len(chain) < MAX_EXC_SHOWN:
+            seen.add(id(exc))
+            chain.append(exc)
+            exc, sep = _next_in_chain(exc)
+            seps.append(sep)
+        more = 0
+        while exc is not None and id(exc) not in seen:  # count only, never render
+            seen.add(id(exc))
+            more += 1
+            exc, _ = _next_in_chain(exc)
+        seq: list = []
+        if more:
+            seq += [("line", f"... ({more} more chained exceptions)", prefix, depth)]
+            seq += [("line", "", prefix, depth)]
+        for k in range(len(chain) - 1, -1, -1):  # oldest first
+            e = chain[k]
+            if e.__traceback__ is not None:
+                seq.append(
+                    ("line", "Traceback (most recent call last):", prefix, depth)
+                )
+                for frame in traceback.format_tb(e.__traceback__):
+                    seq += [
+                        ("line", escape(ln), prefix, depth)
+                        for ln in frame.rstrip("\n").split("\n")
+                    ]
+            seq.append(("line", _exc_text(e, safe), prefix, depth))
+            if group_type is not None and isinstance(e, group_type):
+                subs = list(e.exceptions)
+                if depth + 1 >= MAX_EXC_SHOWN:
+                    msg = f"... ({len(subs)} sub-exceptions not shown: nested too deep)"
+                    seq.append(("line", msg, prefix, depth))
+                else:
+                    for n, sub in enumerate(subs[:MAX_EXC_SHOWN], 1):
+                        head = f"+---------------- sub-exception {n} of {len(subs)} ----------------"
+                        seq.append(("line", head, prefix, depth))
+                        seq.append(("exc", sub, prefix + "| ", depth + 1))
+                    if len(subs) > MAX_EXC_SHOWN:
+                        rest = len(subs) - MAX_EXC_SHOWN
+                        seq.append(
+                            ("line", f"... ({rest} more sub-exceptions)", prefix, depth)
+                        )
+                    seq.append(("line", "+" + "-" * 54, prefix, depth))
+            if k > 0:  # separator between this exception and the newer one
+                sep = seps[k - 1]
+                seq += [("line", t, prefix, depth) for t in ("", sep, "")]
+        stack.extend(reversed(seq))
+    return out
+
+
+def display_width(s):
+    """Terminal columns: East Asian wide and fullwidth count 2; combining, nonspacing (Mn,
+    including variation selectors such as U+FE0F) and enclosing (Me) marks count 0."""
+    return sum(
+        0
+        if unicodedata.combining(c) or unicodedata.category(c) in ("Mn", "Me")
+        else 2
+        if unicodedata.east_asian_width(c) in ("W", "F")
+        else 1
+        for c in s
+    )
+
+
+class Parser(argparse.ArgumentParser):
+    """argparse echoes bad arguments; escape them like every other stderr line."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: error: {escape(message)}\n")
+
+
+def _no_surrogates(v):
+    """Lone surrogates (Cs) cannot be encoded as UTF-8; escape them even in raw CSV."""
+    return "".join(escape(c) if unicodedata.category(c) == "Cs" else c for c in v)
+
+
+def _safe_cell(v, raw=False):
+    """One CSV cell. By default escaped like terminal output (escape()), so a CSV opened in
+    a terminal or viewer never carries raw control, bidi or separator characters. With
+    raw=True the data is kept except lone surrogates. Either way spreadsheet formulas are
+    neutralized with a leading single quote, also behind leading whitespace or invisible
+    control and format characters (for example \\u200b or \\x1b)."""
     v = str(v)
-    return "'" + v if v.startswith(FORMULA) or v.lstrip().startswith(FORMULA[:4]) else v
+    lead = v
+    while lead and (lead[0].isspace() or _is_control(lead[0])):
+        lead = lead[1:]
+    guard = v.startswith(FORMULA) or lead.startswith(FORMULA[:4])
+    v = _no_surrogates(v) if raw else escape(v)
+    return "'" + v if guard or v.startswith(FORMULA) else v
 
 
 def table(rows, cols):
     if not rows:
         return "(no results)"
-    w = {c: max(len(c), *(len(str(r[c])) for r in rows)) for c in cols}
-    line = lambda r: "  ".join(str(r[c]).ljust(w[c]) for c in cols).rstrip()
+    rows = [{c: escape(r.get(c, "")) for c in cols} for r in rows]
+    w = {c: max(len(c), *(display_width(r[c]) for r in rows)) for c in cols}
+    line = lambda r: "  ".join(
+        r[c] + " " * (w[c] - display_width(r[c])) for c in cols
+    ).rstrip()
     return "\n".join(
         [line({c: c.upper() for c in cols}), "  ".join("-" * w[c] for c in cols)]
         + [line(r) for r in rows]
     )
 
 
-def write_csv(rows, path, cols):
-    """Always writes the header, even with no rows."""
-    with open(path, "w", newline="") as f:
+def write_csv(rows, path, cols, raw=False):
+    """UTF-8, always with the header row, even with no rows. See _safe_cell for raw."""
+    with open(path, "w", newline="", encoding="utf-8") as f:
         wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         wr.writeheader()
-        wr.writerows({c: _safe_cell(r.get(c, "")) for c in cols} for r in rows)
+        wr.writerows({c: _safe_cell(r.get(c, ""), raw) for c in cols} for r in rows)
 
 
 def get_ws(args, env=None, **kw):
@@ -55,15 +274,18 @@ def get_ws(args, env=None, **kw):
 
 
 def build_parser():
-    p = argparse.ArgumentParser(
-        prog="bbwarden", description="Bitbucket least-privilege and offboarding"
-    )
+    p = Parser(prog="bbwarden", description="Bitbucket least-privilege and offboarding")
     p.add_argument("--version", action="version", version=f"bbwarden {__version__}")
-    common = argparse.ArgumentParser(add_help=False)
+    common = Parser(add_help=False)
     common.add_argument(
         "--demo", action="store_true", help="use built-in mock workspace"
     )
     common.add_argument("--csv", metavar="OUT", help="also write results to CSV")
+    common.add_argument(
+        "--raw-csv",
+        action="store_true",
+        help="keep control and format characters in CSV cells instead of escaping them",
+    )
     common.add_argument(
         "--insecure",
         action="store_true",
@@ -102,13 +324,13 @@ EXIT_OK, EXIT_ERROR, EXIT_CONFIG = 0, 1, 2  # 2 also covers argparse usage error
 def main(argv=None, env=None, **kw):
     args = build_parser().parse_args(argv)
     if not logging.getLogger("bbwarden").handlers:
-        logging.basicConfig(
-            level=logging.WARNING, format="bbwarden: %(levelname)s %(message)s"
-        )
+        handler = logging.StreamHandler()
+        handler.setFormatter(EscapingFormatter("bbwarden: %(levelname)s %(message)s"))
+        logging.basicConfig(level=logging.WARNING, handlers=[handler])
     try:
         return _run(args, env, **kw)
     except ConfigError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f"error: {escape(e)}", file=sys.stderr)
         sys.exit(EXIT_CONFIG)
     except core.PartialApply as e:
         total = len(e.done) + 1 + len(e.pending)
@@ -117,21 +339,35 @@ def main(argv=None, env=None, **kw):
             file=sys.stderr,
         )
         for d in e.done:
-            print(f"  done    {d}", file=sys.stderr)
-        print(f"  FAILED  {e.failed}", file=sys.stderr)
+            print(f"  done    {escape(d)}", file=sys.stderr)
+        print(f"  FAILED  {escape(e.failed)}", file=sys.stderr)
         for p in e.pending:
-            print(f"  not run {p}", file=sys.stderr)
+            print(f"  not run {escape(p)}", file=sys.stderr)
         print(
             "Re-run the same command (without --apply first) to see what is left.",
             file=sys.stderr,
         )
-        sys.exit(f"error: {core.describe_error(e.error)}")
+        sys.exit(f"error: {escape(core.describe_error(e.error))}")
     except (BBWardenError, core.BadIdpFile) as e:
-        sys.exit(f"error: {e}")
+        sys.exit(f"error: {escape(e)}")
     except OSError as e:
         if e.filename:
-            sys.exit(f"error: cannot open {e.filename}: {e.strerror or e}")
-        sys.exit(f"error: {e.strerror or e}")
+            sys.exit(
+                f"error: cannot open {escape(e.filename)}: {escape(e.strerror or e)}"
+            )
+        sys.exit(f"error: {escape(e.strerror or e)}")
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        sys.exit(130)
+    except Exception as e:  # noqa: BLE001 - last resort: never a raw traceback
+        print("error: unexpected internal error; details follow", file=sys.stderr)
+        try:
+            lines = _exc_lines(e, safe=True)  # frames kept, exception types only
+        except (Exception, RecursionError):  # noqa: BLE001
+            lines = [escape(f"{type(e).__name__}: <traceback unavailable>")]
+        for ln in lines:
+            print(ln, file=sys.stderr)
+        sys.exit(EXIT_ERROR)
 
 
 def _check_writable(path):
@@ -146,6 +382,12 @@ def _check_writable(path):
 def _run(args, env, **kw):
     if args.csv:
         _check_writable(args.csv)
+        if args.raw_csv:
+            print(
+                "WARNING: --raw-csv: CSV cells keep control and format characters "
+                "(terminal escapes, bidi overrides); open the file with care",
+                file=sys.stderr,
+            )
     ws, backend = get_ws(
         args, env, **{k: v for k, v in kw.items() if k != "crowd_session"}
     )
@@ -160,7 +402,14 @@ def _run(args, env, **kw):
             if args.idp == "csv":
                 if not args.idp_file:
                     raise ConfigError("--idp csv needs --idp-file")
-                status = core.load_idp_csv(args.idp_file)
+                try:
+                    status = core.load_idp_csv(args.idp_file)
+                except UnicodeError as e:
+                    where = f" at byte {e.start}" if hasattr(e, "start") else ""
+                    raise ConfigError(
+                        f"--idp-file {args.idp_file} is not valid UTF-8{where}; "
+                        "export it as UTF-8"
+                    ) from None
             elif args.demo:
                 status = {u: v["active"] for u, v in ws.users.items()}
             else:
@@ -197,7 +446,7 @@ def _run(args, env, **kw):
             else:
                 note = "DRY RUN: re-run with --apply to make these changes"
     except KeyError as e:
-        sys.exit(f"error: {e.args[0]}")
+        sys.exit(f"error: {escape(e.args[0])}")
     cols = COLUMNS[args.cmd]
     print(table(rows, cols))
     if ws.manual:
@@ -208,14 +457,14 @@ def _run(args, env, **kw):
             file=sys.stderr,
         )
         for lab, why in ws.manual:
-            print(f"  MANUAL  {lab}: {why}", file=sys.stderr)
+            print(f"  MANUAL  {escape(lab)}: {escape(why)}", file=sys.stderr)
         note = ""
     if note:
         print(f"\n{note}")
     for n in ws.notes:
-        print(f"NOTE: {n}", file=sys.stderr)
+        print(f"NOTE: {escape(n)}", file=sys.stderr)
     if args.csv:
-        write_csv(rows, args.csv, cols)
+        write_csv(rows, args.csv, cols, raw=args.raw_csv)
     return 1 if ws.manual else 0
 
 
