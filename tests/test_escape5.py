@@ -40,7 +40,9 @@ def test_lone_surrogate_raw_csv_does_not_crash(monkeypatch, tmp_path, capsys):
     run_ws(monkeypatch, ws_with("bad\ud800name"))
     out = tmp_path / "o.csv"
     assert cli.main(["who", "api", "--csv", str(out), "--raw-csv"]) == 0
-    assert "bad\\ud800name" in cells(out)
+    assert "bad\ufffdname" in cells(
+        out
+    )  # U+FFFD since 0.2.4, see test_c024_raw_surrogate
 
 
 def test_csv_escaped_by_default(monkeypatch, tmp_path, capsys):

@@ -6,8 +6,8 @@ Plan for bbwarden by phase. Each phase ships something you can run from the comm
 
 | Item | Details |
 | --- | --- |
-| **Latest release** | `v0.2.3` (2026-10-15). See [CHANGELOG.md](CHANGELOG.md). |
-| **Next** | Finish Phase 2: Harden (most of it shipped in `v0.2.0`, `v0.2.1`, `v0.2.2` and `v0.2.3`) |
+| **Latest release** | `v0.2.4` (2026-10-15). See [CHANGELOG.md](CHANGELOG.md). |
+| **Next** | Finish Phase 2: Harden (most of it shipped in `v0.2.0`, `v0.2.1`, `v0.2.2`, `v0.2.3` and `v0.2.4`) |
 | **Next target** | `v0.3.0` |
 
 ## Phase map
@@ -16,7 +16,7 @@ Plan for bbwarden by phase. Each phase ships something you can run from the comm
 | --- | --- | --- | --- | --- |
 | **0** | Foundation | `v0.1.0` | Five commands, demo mode, live Data Center reads, CSV, tests, CI | Done |
 | **1** | Connect | `v0.2.0` | Live Bitbucket Cloud, live Crowd lookup, live `--apply` | Done |
-| **2** | Harden | `v0.3.0` | Retries, paging, clear errors, exit codes, safe apply, https only, no redirects, no credentials in URLs, escaped output | In progress (most shipped in `v0.2.0`, `v0.2.1`, `v0.2.2` and `v0.2.3`) |
+| **2** | Harden | `v0.3.0` | Retries, paging, clear errors, exit codes, safe apply, https only, no redirects, no credentials in URLs, escaped output | In progress (most shipped in `v0.2.0`, `v0.2.1`, `v0.2.2`, `v0.2.3` and `v0.2.4`) |
 | **3** | Report | `v0.4.0` | JSON output, severity, exit-on-findings for CI | Planned |
 | **4** | Stable | `v1.0.0` | Stable CLI, flag names, report schema and exit codes | Planned |
 
@@ -61,8 +61,11 @@ Plan for bbwarden by phase. Each phase ships something you can run from the comm
 - [x] https only (`--insecure` to allow http), redirects never followed, no credentials, query or fragment in `BBWARDEN_URL`/`CROWD_URL` (`v0.2.1`)
 - [x] Escaped terminal output (control and bidi characters shown as code points) and CSV formula guard that sees through invisible leading characters (`v0.2.2`)
 - [x] IDN hostnames compared as requests sends them (`v0.2.3`)
-- [ ] Known limit for `v0.2.4`: with `--raw-csv`, an escaped lone surrogate (written as `\ud800`) looks the same as a name that literally contains `\ud800`
-- [ ] Known limit for `v0.2.4`: Ctrl-C during startup or argument parsing (before `main()`'s error handling) still shows Python's own traceback
+- [x] With `--raw-csv`, lone surrogates are written as U+FFFD, so they never look like a name that literally contains `\ud800` (`v0.2.4`)
+- [x] Ctrl-C during imports or argument parsing exits 130 without a traceback; only a Ctrl-C during Python's own start-up, before bbwarden runs, cannot be caught (`v0.2.4`)
+- [x] Malformed or cyclic pagination fails loudly; a partially loaded inventory exits 3 with `INCOMPLETE:` (`v0.2.4`)
+- [x] `offboard` removes every direct global permission; `regroup --apply` re-reads group members before granting and reports manual rows (`v0.2.4`)
+- [x] Ctrl-C during `--apply` reports finished, interrupted and not-run steps; atomic CSV writes; strict IdP CSV columns and Crowd active flag (`v0.2.4`)
 - [x] `--apply` reports which steps finished, failed and were not run (`v0.2.0`)
 - [ ] Warn before removing a user's last admin path
 - [x] CSV formula injection escaped (`v0.2.0`)

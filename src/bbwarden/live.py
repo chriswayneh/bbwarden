@@ -171,6 +171,7 @@ class DataCenter:
 
         def admins():
             for x in self.h.paginate(f"{p}/admin/permissions/users"):
+                ws.global_perms[x["user"]["name"]] = x["permission"]
                 if x["permission"] in GLOBAL_ADMIN:
                     ws.admins[x["user"]["name"]] = f"global:{x['permission']}"
 
@@ -183,17 +184,20 @@ class DataCenter:
         _optional(ws, "global admin groups", admin_groups)
         _fill(
             ws,
-            lambda g: [
-                m["name"]
-                for m in self.h.paginate(
-                    f"{p}/admin/groups/more-members", {"context": g}
-                )
-            ],
+            self.group_members,
             lambda: {
                 u["name"]: u.get("active") for u in self.h.paginate(f"{p}/admin/users")
             },
         )
         return ws
+
+    def group_members(self, group):
+        return [
+            m["name"]
+            for m in self.h.paginate(
+                "rest/api/1.0/admin/groups/more-members", {"context": group}
+            )
+        ]
 
     def load_memberships(self, ws, user):
         """Add every group the user belongs to, not only groups that hold a grant."""
@@ -306,16 +310,15 @@ class CloudBackend:
                 },
             }
         # Legacy 1.0 groups API: Bitbucket Cloud has no 2.0 group membership endpoint yet.
-        _fill(
-            ws,
-            lambda g: [
-                self._user(m) for m in self.h.get(f"1.0/groups/{w}/{g}/members")
-            ],
-            None,
-        )
+        _fill(ws, self.group_members, None)
         for k, n in self.names.items():
             ws.users.setdefault(k, {"active": None})["name"] = n
         return ws
+
+    def group_members(self, group):
+        return [
+            self._user(m) for m in self.h.get(f"1.0/groups/{self.w}/{group}/members")
+        ]
 
     def load_memberships(self, ws, user):
         """Load every workspace group (legacy 1.0 API) so offboard sees all memberships."""
@@ -369,7 +372,7 @@ def _fill(ws, members, statuses):
     names = {u for m in ws.groups.values() for u in m}
     for obj in list(ws.projects.values()) + list(ws.repos.values()):
         names |= set(obj["users"])
-    names |= set(ws.admins)
+    names |= set(ws.admins) | set(ws.global_perms)
     # None means unknown: Cloud exposes no account status, and Data Center may omit users.
     active = statuses() if statuses else {}
     ws.users = {n: {"active": active.get(n)} for n in names}
@@ -381,18 +384,21 @@ def crowd_status(http, users):
     out = {}
     for u in users:
         try:
-            out[u] = bool(
-                http.get("rest/usermanagement/1/user", params={"username": u}).get(
-                    "active"
-                )
-            )
+            body = http.get("rest/usermanagement/1/user", params={"username": u})
         except BBWardenError as e:
             if isinstance(e, AuthError):
                 raise
             if "HTTP 404" in str(e):
                 out[u] = False
-            else:
-                raise
+                continue
+            raise
+        active = body.get("active") if isinstance(body, dict) else None
+        if not isinstance(active, bool):  # "false" or a missing field must not guess
+            raise BBWardenError(
+                f"Crowd returned no boolean active flag for user {u}; "
+                "refusing to guess the account status"
+            )
+        out[u] = active
     return out
 
 

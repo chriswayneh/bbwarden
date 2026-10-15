@@ -187,6 +187,10 @@ def load_idp_csv(path):
             c.strip() for c in rd.fieldnames
         }:
             raise BadIdpFile(f"{path}: needs columns user,active")
+        names = [c.strip() for c in rd.fieldnames]
+        dupes = sorted({c for c in names if names.count(c) > 1})
+        if dupes:  # DictReader keeps only the last one, which could flip a verdict
+            raise BadIdpFile(f"{path}: duplicate column {', '.join(dupes)}")
         for row in rd:
             line = rd.line_num
             row = {k.strip(): (v or "").strip() for k, v in row.items() if k}
@@ -302,7 +306,7 @@ def _run_steps(steps):
     for i, (label, fn) in enumerate(steps):
         try:
             fn()
-        except Exception as e:
+        except (Exception, KeyboardInterrupt) as e:  # Ctrl-C must still report progress
             log.error(
                 "apply failed at step %s after %d finished: %s",
                 label,
@@ -317,10 +321,30 @@ def _run_steps(steps):
     return done
 
 
+def _recheck_group(ws, backend, key, group, perm):
+    """Re-read the group right before granting it: a member added since the plan must
+    not gain access through the new group grant."""
+    ws.groups[group] = list(backend.group_members(group))
+    eff = _effective(ws, key)
+    wider = sorted(m for m in ws.groups[group] if eff.get(m, 0) < rank(perm))
+    if wider:
+        raise BBWardenError(
+            f"group {group} changed since the plan: granting {perm} on repo {key} would "
+            f"widen access for {len(wider)} member(s); re-run without --apply to re-plan"
+        )
+
+
 def apply_regroup(ws, plan, backend=None):
     """Grant the group first, then drop the direct grant, so access is never lost mid-way."""
     steps = []
     for step in plan:
+        if step["action"] == "manual":  # never applied: report it so the run exits 1
+            ws.manual.append(
+                (
+                    f"replace direct {step['user']} on repo {step['repo']}",
+                    step["detail"],
+                )
+            )
         if step["action"] != "replace":
             continue
         key, u, g = step["repo"], step["key"], step["group"]
@@ -330,6 +354,7 @@ def apply_regroup(ws, plan, backend=None):
         def grant(key=key, g=g, perm=perm, repo=repo):
             if rank(repo["groups"].get(g)) < rank(perm):
                 if backend:
+                    _recheck_group(ws, backend, key, g, perm)
                     backend.grant_group(ws, key, g, perm)
                 repo["groups"][g] = perm
 
@@ -377,10 +402,12 @@ def offboard(ws, user, memberships=True):
                     "detail": "",
                 }
             )
-    if (
-        user in ws.admins
-    ):  # last: may be impossible by API (Cloud owners), so it must not block the rest
-        kind, level = ws.admins[user].split(":", 1)
+    # Last: may be impossible by API (Cloud owners), so it must not block the rest. Any
+    # direct global permission counts, not only admin levels (LICENSED_USER, PROJECT_CREATE).
+    if user in ws.admins or user in ws.global_perms:
+        kind, level = ws.admins.get(user, f"global:{ws.global_perms.get(user)}").split(
+            ":", 1
+        )
         action = (
             "remove all global permissions"
             if kind == "global"
@@ -403,6 +430,7 @@ def apply_offboard(ws, user, plan, backend=None):
                 backend.remove_user(ws, step["scope"], step["name"], user)
         if step["scope"] == "global":
             ws.admins.pop(user, None)
+            ws.global_perms.pop(user, None)
         elif step["scope"] == "project":
             ws.projects[step["name"]]["users"].pop(user, None)
         elif step["scope"] == "repo":
@@ -425,7 +453,7 @@ def apply_offboard(ws, user, plan, backend=None):
             log.warning("manual step needed: %s: %s", lab(s), e)
             ws.manual.append((lab(s), str(e)))
             continue
-        except Exception as e:
+        except (Exception, KeyboardInterrupt) as e:
             log.error(
                 "apply failed at step %s after %d finished: %s",
                 lab(s),

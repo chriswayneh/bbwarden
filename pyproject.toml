@@ -15,7 +15,7 @@ dependencies = ["atlassian-python-api>=3.41", "requests>=2.32.4", "idna>=2.5,<4"
 dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.6", "mypy>=1.10", "types-requests", "hypothesis>=6"]
 
 [project.scripts]
-bbwarden = "bbwarden.cli:main"
+bbwarden = "bbwarden._entry:run"
 
 [tool.setuptools.dynamic]
 version = {attr = "bbwarden.__version__"}

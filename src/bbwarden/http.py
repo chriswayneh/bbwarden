@@ -232,24 +232,43 @@ class Http:
             ) from None
 
     def paginate(self, path, params=None):
-        """Yield items across pages. Handles Cloud (next) and Data Center (isLastPage)."""
+        """Yield items across pages. Handles Cloud (next) and Data Center (isLastPage).
+
+        A page without a "values" list, a Data Center page that says more pages follow but
+        gives no cursor, and a repeated cursor or next link all raise: a partial list must
+        never be mistaken for the full inventory that regroup and offboard rely on."""
         params = dict(params or {})
         url = path
         seen = set()
+        where = _safe_url(self.url(path))
+
+        def broken(why):
+            return BBWardenError(
+                f"incomplete pagination on GET {where}: {why}; refusing to continue on a "
+                "partial result"
+            )
+
         while True:
             data = self.get(url, params=params)
-            yield from data.get("values", [])
+            values = data.get("values") if isinstance(data, dict) else None
+            if not isinstance(values, list):
+                raise broken("page has no list of values")
+            yield from values
             if "next" in data or "isLastPage" not in data:  # Cloud style
                 nxt = data.get("next")
-                if not nxt or nxt in seen:
+                if not nxt:
                     return
+                if nxt in seen:
+                    raise broken("next link repeats")
                 seen.add(nxt)
                 url, params = nxt, None  # next URL already carries params
             else:  # Data Center style
-                if data.get("isLastPage", True) or data.get("nextPageStart") is None:
+                if data.get("isLastPage") is True:
                     return
-                start = data["nextPageStart"]
+                start = data.get("nextPageStart")
+                if start is None:
+                    raise broken("more pages announced but no nextPageStart")
                 if start in seen:
-                    return
+                    raise broken("nextPageStart repeats")
                 seen.add(start)
                 params["start"] = start

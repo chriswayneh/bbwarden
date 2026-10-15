@@ -2,8 +2,12 @@ import argparse
 import builtins
 import copy
 import csv
+import errno
+import io
 import logging
 import os
+import secrets
+import stat
 import sys
 import traceback
 import unicodedata
@@ -225,8 +229,10 @@ class Parser(argparse.ArgumentParser):
 
 
 def _no_surrogates(v):
-    """Lone surrogates (Cs) cannot be encoded as UTF-8; escape them even in raw CSV."""
-    return "".join(escape(c) if unicodedata.category(c) == "Cs" else c for c in v)
+    """Lone surrogates (Cs) cannot be encoded as UTF-8. Raw CSV writes U+FFFD for them,
+    the standard replacement character, so they never look like the literal text
+    \\ud800 that a name could really contain."""
+    return "".join("\ufffd" if unicodedata.category(c) == "Cs" else c for c in v)
 
 
 def _safe_cell(v, raw=False):
@@ -259,11 +265,142 @@ def table(rows, cols):
 
 
 def write_csv(rows, path, cols, raw=False):
-    """UTF-8, always with the header row, even with no rows. See _safe_cell for raw."""
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
-        wr.writeheader()
-        wr.writerows({c: _safe_cell(r.get(c, ""), raw) for c in cols} for r in rows)
+    """Write the CSV and return the stdout state ("ok", "pipe" or "error", see
+    stdout_call). UTF-8, always with the header row, even with no rows. See _safe_cell
+    for raw. Written to a temporary sibling and renamed over the target, so a failed write
+    never leaves a truncated file and never destroys the previous one. A symlink is
+    followed, so its target is updated and the link stays a link. The temporary file is
+    owner-only (0o600) while rows are written and gets its final mode just before the
+    rename: the existing file's mode, or 0o666 minus the umask for a new file.
+    An existing target that is not a regular file (a FIFO, /dev/stdout, /dev/fd/N, a
+    character device) is written directly: it cannot be replaced by a rename."""
+    if _is_stdout(path):  # `--csv out.csv > out.csv`: append after the table, no rename
+        return _write_to_stdout(rows, cols, raw)
+    _refuse_socket(path)
+    if _is_special(path):
+        state = flush_stdout()  # keep the table before the CSV (/dev/tty and the like)
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            _write_rows(f, rows, cols, raw)
+        return state
+    real = os.path.realpath(path)
+    if os.path.isdir(real):
+        raise IsADirectoryError(21, "Is a directory", path)
+    try:
+        mode = stat.S_IMODE(os.stat(real).st_mode)
+    except FileNotFoundError:
+        mode = _new_file_mode(real, path)
+    fd, tmp = _temp_sibling(real, path, 0o600)
+    try:
+        f = os.fdopen(fd, "w", newline="", encoding="utf-8")
+    except BaseException:
+        os.close(fd)
+        _remove_quietly(tmp)
+        raise
+    try:
+        with f:
+            _write_rows(f, rows, cols, raw)
+        os.chmod(tmp, mode)
+        os.replace(tmp, real)
+    except BaseException:
+        _remove_quietly(tmp)
+        raise
+    return "ok"
+
+
+def _write_rows(f, rows, cols, raw):
+    wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+    wr.writeheader()
+    wr.writerows({c: _safe_cell(r.get(c, ""), raw) for c in cols} for r in rows)
+
+
+def _is_special(path):
+    """True for an existing target (symlinks followed) that is neither a regular file nor
+    a directory, for example a FIFO or a character device."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    return not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode))
+
+
+def _write_to_stdout(rows, cols, raw):
+    """CSV through stdout, still UTF-8 with \r\n rows whatever the console encoding:
+    built in memory and written as UTF-8 bytes to stdout's byte buffer (text if there
+    is no buffer). No wrapper is put around the buffer, so nothing can close it. Goes
+    through stdout_call; returns its "ok", "pipe" or "error"."""
+    text = io.StringIO(newline="")
+    _write_rows(text, rows, cols, raw)
+
+    def write(out):
+        out.flush()  # the table goes first
+        buf = getattr(out, "buffer", None)
+        if buf is None:
+            out.write(text.getvalue())
+            out.flush()
+        else:
+            buf.write(text.getvalue().encode("utf-8"))
+            buf.flush()
+
+    return stdout_call(write)
+
+
+def _is_stdout(path):
+    """True when path is the very file stdout points at (same device and inode), for
+    example `--csv out.csv > out.csv`. A stdout without a real file descriptor (pytest
+    capture, an io.StringIO) never matches."""
+    try:
+        out = os.fstat(sys.stdout.fileno())
+        st = os.stat(path)
+    # io.UnsupportedOperation is an OSError
+    except (AttributeError, OSError, ValueError):
+        return False
+    return (st.st_dev, st.st_ino) == (out.st_dev, out.st_ino)
+
+
+def _refuse_socket(path):
+    """A Unix socket cannot be opened as a file; say so instead of a bare ENXIO."""
+    try:
+        is_sock = stat.S_ISSOCK(os.stat(path).st_mode)
+    except OSError:
+        return
+    if is_sock:
+        raise ConfigError(
+            f"--csv {path} is a Unix socket; write to a file, FIFO or /dev/stdout instead"
+        )
+
+
+def _remove_quietly(p):
+    try:
+        os.remove(p)
+    except OSError:
+        pass
+
+
+def _new_file_mode(real, shown):
+    """0o666 minus the umask, read from an empty probe file instead of calling os.umask
+    (which changes process-wide state)."""
+    fd, probe = _temp_sibling(real, shown, 0o666)
+    try:
+        return stat.S_IMODE(os.fstat(fd).st_mode)
+    finally:
+        os.close(fd)
+        _remove_quietly(probe)
+
+
+def _temp_sibling(real, shown, mode):
+    """A new empty file next to real, created with mode (the umask still narrows it).
+    Errors name the path the user gave, not the temp name."""
+    d = os.path.dirname(real)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    for _ in range(100):
+        tmp = os.path.join(d, f".bbwarden-{secrets.token_hex(8)}.tmp")
+        try:
+            return os.open(tmp, flags, mode), tmp
+        except FileExistsError:
+            continue
+        except OSError as e:
+            raise OSError(e.errno, e.strerror, shown) from None
+    raise FileExistsError(17, "no free temporary file name", shown)
 
 
 def get_ws(args, env=None, **kw):
@@ -319,10 +456,110 @@ def build_parser():
 
 
 EXIT_OK, EXIT_ERROR, EXIT_CONFIG = 0, 1, 2  # 2 also covers argparse usage errors
+EXIT_INCOMPLETE = 3  # finished, but part of the inventory could not be loaded
+EXIT_BROKEN_PIPE = 141  # 128 + SIGPIPE, as shells report `bbwarden ... | head`
+
+
+def stdout_to_devnull():
+    """stdout's reader went away: point stdout's file descriptor at os.devnull so later
+    writes and the final flush at exit cannot raise again ("Exception ignored ...")."""
+    try:
+        fd = sys.stdout.fileno()
+        devnull = os.open(os.devnull, os.O_WRONLY)
+    except (AttributeError, OSError, ValueError):
+        return
+    try:
+        os.dup2(devnull, fd)
+    except OSError:
+        pass
+    finally:
+        os.close(devnull)
+
+
+def is_pipe_error(e):
+    """A write to stdout failed because its reader is gone. Windows reports a closed
+    pipe as EINVAL, so there (only) that counts too (best effort)."""
+    if isinstance(e, BrokenPipeError):
+        return True
+    if not isinstance(e, OSError):
+        return False
+    return e.errno == errno.EPIPE or (os.name == "nt" and e.errno == errno.EINVAL)
+
+
+def stdout_call(fn):
+    """The one place that touches stdout. Runs fn(sys.stdout) and returns "ok", "pipe"
+    (the reader is gone) or "error" (any other write error, reported once on stderr).
+    On a failure stdout is pointed at os.devnull, so no later write and no flush at exit
+    can raise again ("Exception ignored ...", exit 120). A missing stdout (`>&-`, so
+    sys.stdout is None) or an already closed one is skipped."""
+    out = sys.stdout
+    if out is None:
+        return "ok"
+    try:
+        fn(out)
+        return "ok"
+    except ValueError:  # I/O on a closed file object
+        return "ok"
+    except OSError as e:
+        stdout_to_devnull()
+        if is_pipe_error(e):
+            return "pipe"
+        print(
+            f"error: cannot write to stdout: {escape(e.strerror or e)}", file=sys.stderr
+        )
+        return "error"
+
+
+def flush_stdout():
+    return stdout_call(lambda out: out.flush())
+
+
+def flush_stderr():
+    """Flush stderr; if that fails (`2>/dev/full`), point it at os.devnull so the exit
+    code stays the real one. A missing stderr is skipped."""
+    err = sys.stderr
+    if err is None:
+        return
+    try:
+        err.flush()
+    except (OSError, ValueError):
+        from ._entry import _fd_to_devnull
+
+        _fd_to_devnull(err)
+
+
+def final_code(code, state):
+    """Exit code after the last stdout flush. A gone reader only turns success into 141;
+    an unwritable stdout turns success, 3 and 141 into 1. 2, 1, 130 and error messages
+    (sys.exit("error: ...")) always win."""
+    if state == "pipe" and code in (EXIT_OK, None):
+        return EXIT_BROKEN_PIPE
+    if state == "error" and code in (EXIT_OK, None, EXIT_INCOMPLETE, EXIT_BROKEN_PIPE):
+        return EXIT_ERROR
+    return code
 
 
 def main(argv=None, env=None, **kw):
-    args = build_parser().parse_args(argv)
+    """Run bbwarden, then flush stdout through stdout_call on every way out (normal
+    return, sys.exit from argparse --help/--version or an error, Ctrl-C), so a closed or
+    unwritable stdout gives 141 or 1 instead of a traceback or exit 120."""
+    try:
+        code = _main(argv, env, **kw)
+    except SystemExit as e:
+        code = final_code(e.code, flush_stdout())
+        flush_stderr()
+        raise SystemExit(code) from None
+    code = final_code(code, flush_stdout())
+    flush_stderr()
+    return code
+
+
+def _main(argv=None, env=None, **kw):
+    try:  # Ctrl-C while argparse runs: same exit 130 as later, never a traceback
+        args = build_parser().parse_args(argv)
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        sys.exit(130)
     if not logging.getLogger("bbwarden").handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(EscapingFormatter("bbwarden: %(levelname)s %(message)s"))
@@ -334,19 +571,30 @@ def main(argv=None, env=None, **kw):
         sys.exit(EXIT_CONFIG)
     except core.PartialApply as e:
         total = len(e.done) + 1 + len(e.pending)
+        interrupted = isinstance(e.error, KeyboardInterrupt)
+        why = "Ctrl-C" if interrupted else "a failure"
         print(
-            f"\nAPPLY STOPPED: {len(e.done)} of {total} steps finished before a failure.",
+            f"\nAPPLY STOPPED: {len(e.done)} of {total} steps finished before {why}.",
             file=sys.stderr,
         )
         for d in e.done:
             print(f"  done    {escape(d)}", file=sys.stderr)
-        print(f"  FAILED  {escape(e.failed)}", file=sys.stderr)
+        if interrupted:  # the request may or may not have reached the server
+            print(
+                f"  INTERRUPTED {escape(e.failed)} (may or may not have happened)",
+                file=sys.stderr,
+            )
+        else:
+            print(f"  FAILED  {escape(e.failed)}", file=sys.stderr)
         for p in e.pending:
             print(f"  not run {escape(p)}", file=sys.stderr)
         print(
             "Re-run the same command (without --apply first) to see what is left.",
             file=sys.stderr,
         )
+        if interrupted:
+            print("interrupted", file=sys.stderr)
+            sys.exit(130)
         sys.exit(f"error: {escape(core.describe_error(e.error))}")
     except (BBWardenError, core.BadIdpFile) as e:
         sys.exit(f"error: {escape(e)}")
@@ -371,12 +619,25 @@ def main(argv=None, env=None, **kw):
 
 
 def _check_writable(path):
-    """Fail before any output if the CSV path cannot be written. Leaves no new file behind."""
-    existed = os.path.exists(path)
-    with open(path, "a", newline=""):
-        pass
-    if not existed:
-        os.remove(path)
+    """Fail before any output if the CSV path cannot be written. Never creates, truncates
+    or removes the target itself: an existing file is opened for append only, and the
+    directory is probed with a temporary sibling (write_csv renames one into place)."""
+    if _is_stdout(path):  # written through stdout itself; the folder does not matter
+        return
+    _refuse_socket(path)
+    if _is_special(path):  # opening a FIFO here would block or eat the reader's EOF
+        if not os.access(path, os.W_OK):
+            raise PermissionError(13, "Permission denied", path)
+        return
+    real = os.path.realpath(path)  # a symlink: the target and its folder are what count
+    if os.path.isdir(real):
+        raise IsADirectoryError(21, "Is a directory", path)
+    if os.path.lexists(real):
+        with open(real, "a", newline=""):
+            pass
+    fd, tmp = _temp_sibling(real, path, 0o600)
+    os.close(fd)
+    os.remove(tmp)
 
 
 def _run(args, env, **kw):
@@ -448,7 +709,8 @@ def _run(args, env, **kw):
     except KeyError as e:
         sys.exit(f"error: {escape(e.args[0])}")
     cols = COLUMNS[args.cmd]
-    print(table(rows, cols))
+    out = _Stdout()
+    out.print(table(rows, cols))
     if ws.manual:
         total = len(rows)
         print(
@@ -460,13 +722,48 @@ def _run(args, env, **kw):
             print(f"  MANUAL  {escape(lab)}: {escape(why)}", file=sys.stderr)
         note = ""
     if note:
-        print(f"\n{note}")
+        out.print(f"\n{note}")
     for n in ws.notes:
         print(f"NOTE: {escape(n)}", file=sys.stderr)
+    if ws.notes:  # every note is a part of the inventory that could not be loaded
+        print(
+            "INCOMPLETE: part of the inventory could not be loaded (see NOTE lines), so "
+            "these results may miss access; exit code 3",
+            file=sys.stderr,
+        )
     if args.csv:
-        write_csv(rows, args.csv, cols, raw=args.raw_csv)
-    return 1 if ws.manual else 0
+        try:
+            state = write_csv(rows, args.csv, cols, raw=args.raw_csv)
+        except OSError as e:  # a FIFO reader left
+            if not is_pipe_error(e):
+                raise
+            state = "pipe"
+        out.merge(state)
+    # Precedence: 2 (raised earlier), then 1, then 3, then 141, then 0.
+    if ws.manual or out.state == "error":
+        return EXIT_ERROR
+    if ws.notes:
+        return EXIT_INCOMPLETE
+    return EXIT_BROKEN_PIPE if out.state == "pipe" else EXIT_OK
+
+
+class _Stdout:
+    """stdout output of one run. After a failure (see stdout_call) the rest of the run
+    (stderr reports, CSV, exit code) goes on and later stdout writes are skipped."""
+
+    def __init__(self):
+        self.state = "ok"
+
+    def merge(self, state):
+        if self.state == "ok":
+            self.state = state
+
+    def print(self, text):
+        if self.state == "ok":
+            self.state = stdout_call(lambda out: (print(text, file=out), out.flush()))
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    from bbwarden._entry import run
+
+    run()

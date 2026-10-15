@@ -4,6 +4,69 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.4] - 2026-10-15
+
+### Fixed
+- `offboard` now removes every direct global permission on Data Center (for example
+  `LICENSED_USER` or `PROJECT_CREATE`), not only admin levels, so offboarding no longer
+  leaves global access behind. Data Center users whose only access is a direct global
+  permission (for example `LICENSED_USER`) are now loaded into the inventory so `offboard`
+  finds them; the `who`, `direct`, `orphans` and `regroup` reports are unchanged.
+- Pagination fails loudly with an `incomplete pagination` error (exit 1) on a page without a
+  `values` list, a Data Center page that is neither the last nor has a `nextPageStart`, or a
+  repeated cursor, instead of silently using a partial list.
+- `regroup --apply` re-reads the group's members right before each grant and stops if a
+  member added since the plan would gain access.
+- `regroup --apply` lists rows marked `manual` as `MANUAL` and exits 1 instead of printing
+  `APPLIED` and exiting 0.
+- An IdP CSV with duplicate column names (also after trimming spaces) is refused.
+- Ctrl-C during `--apply` prints which steps finished, which was interrupted and which were
+  not run, then exits 130.
+- `--csv` never removes or truncates an existing file while checking that the path is
+  writable, and writes through a temporary file renamed into place, so a failed write keeps
+  the old file. A symlink is followed: its target is updated and the link stays. An existing
+  target that is not a regular file (a FIFO, `/dev/stdout`, `/dev/fd/N` from process
+  substitution, a character device) is written directly, with no temporary file or rename,
+  as before. A Unix socket target is refused before any output with a configuration error
+  (exit 2). A target that is the same file as stdout (`--csv out.csv > out.csv` or `>>`) is
+  written through stdout after the table instead of being replaced. The CSV is always UTF-8,
+  whatever the console encoding (also for `/dev/stdout` and `/dev/tty`).
+- Crowd status needs a real boolean `active` flag; a string, number or missing flag is an
+  error instead of a guess.
+- With `--raw-csv`, lone surrogates are written as U+FFFD, so they can no longer be confused
+  with a name that literally contains `\ud800` (ROADMAP known limit). A U+FFFD in raw CSV
+  can no longer be told apart from a real U+FFFD in the data; use the default escaped CSV
+  when that matters.
+- Ctrl-C while bbwarden is still importing or parsing arguments prints `interrupted` and
+  exits 130 instead of a Python traceback (ROADMAP known limit). The console script now
+  points at `bbwarden._entry:run`.
+
+### Changed
+- New exit code 141 when stdout's reader goes away (`bbwarden ... | head`): output stops
+  quietly with no traceback or "Exception ignored" message, as with SIGPIPE. The rest of
+  the run still happens (stderr reports such as MANUAL, NOTE and INCOMPLETE, the CSV), and
+  codes 1, 2 and 3 take precedence over 141.
+- Every stdout write and flush goes through one helper: a closed stdout (`>&-`) is skipped
+  (the CSV is still written, exit 0), `--help` and `--version` to a gone reader exit 141,
+  and an unwritable stdout (`> /dev/full`) prints `error: cannot write to stdout` and
+  exits 1. With stdout closed, stdout output is silently skipped and the run exits 0 (the
+  CSV is still written). An unwritable stderr (`2>/dev/full`) keeps the real exit code.
+  None of these ends in a traceback, "Exception ignored" or exit 120.
+- CSV writes are atomic, so `--csv` needs a writable folder: a writable file in a read-only
+  folder is now refused before any output (exit 1). The rename creates a new file, so the
+  old file's owner, ACLs and extended attributes are not kept and hard links to it keep the
+  old content; only the permission bits are copied.
+- New exit code 3: the command finished but part of the inventory could not be loaded
+  (`NOTE:` lines plus an `INCOMPLETE:` line on stderr). Previously this exited 0.
+
+### Security
+- The temporary CSV file is owner-only (0o600) while the access inventory is written and
+  gets its final mode (the old file's, or 0o666 minus the umask for a new file) just
+  before the rename, so other local users cannot read a private report mid-rewrite. The
+  umask is read from an empty probe file, never changed.
+- Known limit: the target path is resolved once; an attacker who can write to a folder on
+  that path can redirect the write between resolve and rename.
+
 ## [0.2.3] - 2026-10-15
 
 ### Fixed
