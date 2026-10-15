@@ -113,7 +113,8 @@ Hardening:
 - `BBWARDEN_URL` and `CROWD_URL` must be `https://` for every host, loopback included.
   `--insecure` allows `http://` for a local test server and prints a warning on stderr.
   There is no automatic localhost exception, so plain http is always an explicit choice.
-  A URL without a hostname (`https://`, `https:x`) is refused.
+  A URL that is not a valid URL (for example `https://[::1`) or has no hostname
+  (`https://`, `https:x`) is refused.
 - A `BBWARDEN_URL` or `CROWD_URL` with embedded credentials (`https://user:pass@host`), a query
   string or a fragment is refused with exit code 2; put them in `BBWARDEN_USER`/`BBWARDEN_TOKEN` or
   `CROWD_APP`/`CROWD_APP_PASSWORD`. Messages show URLs as scheme, host, port and path only:
@@ -235,7 +236,7 @@ Tests run offline against demo data and a mocked HTTP session.
 | --- | --- |
 | 0 | Success (including dry runs) |
 | 1 | Runtime error: Bitbucket or Crowd error, unknown repo or user, bad IdP file, file error, an `--apply` that stopped partway, or an `offboard --apply` with MANUAL steps left |
-| 2 | Configuration or usage error: http refused, URL without a hostname or with embedded credentials, missing variable (for example `BBWARDEN_TOKEN`, `BBWARDEN_WORKSPACE`, Crowd credentials), `--idp csv` without `--idp-file`, or invalid arguments |
+| 2 | Configuration or usage error: http refused, URL that is not a valid URL, has no hostname, or contains embedded credentials, a query string or a fragment, missing variable (for example `BBWARDEN_TOKEN`, `BBWARDEN_WORKSPACE`, Crowd credentials), `--idp csv` without `--idp-file`, or invalid arguments |
 
 Errors are printed to stderr as `error: ...`.
 

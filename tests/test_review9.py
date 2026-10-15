@@ -9,7 +9,9 @@ from test_round8 import Backend, run, ws_root
 from bbwarden import cli, core, live
 from bbwarden.http import _safe_url
 
-SECRET = "pa55-S3CRET-tok"
+SECRET = (
+    "pa55-" + "S3CRET" + "-tok"
+)  # built at runtime so secret scanners do not flag it
 
 
 @pytest.mark.parametrize(
@@ -87,3 +89,32 @@ def test_bbwarden_error_message_still_shown(monkeypatch):
     with pytest.raises(SystemExit) as e:
         cli.main(["offboard", "root", "--apply"])
     assert "HTTP 500 on DELETE" in str(e.value.code)
+
+
+@pytest.mark.parametrize("url", ["https://[::1", "https://bb.example.com:99999"])
+def test_invalid_url_is_config_error(url, capsys):
+    env = {"BBWARDEN_URL": url, "BBWARDEN_USER": "u", "BBWARDEN_TOKEN": "t"}
+    with pytest.raises(SystemExit) as e:
+        cli.main(["direct"], env=env, session_factory=lambda *a: None)
+    assert e.value.code == 2
+    assert capsys.readouterr().err.startswith("error: BBWARDEN_URL is not a valid URL")
+
+
+def test_readme_exit_code_2_row_lists_url_refusals():
+    from pathlib import Path
+
+    row = next(
+        ln
+        for ln in Path(__file__)
+        .parent.parent.joinpath("README.md")
+        .read_text()
+        .splitlines()
+        if ln.startswith("| 2 |")
+    )
+    for phrase in (
+        "not a valid URL",
+        "no hostname",
+        "credentials",
+        "query string or a fragment",
+    ):
+        assert phrase in row

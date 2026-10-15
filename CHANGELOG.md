@@ -27,7 +27,8 @@ All notable changes to bbwarden are listed here. The format follows
   anyway, is an error (`redirect refused: <status> to <host>`) naming only the status and
   the target host.
 - `BBWARDEN_URL` and `CROWD_URL` with embedded credentials (`https://user:pass@host`), a query
-  string or a fragment are refused as a configuration error (exit 2) without echoing them.
+  string or a fragment are refused as a configuration error (exit 2) without echoing them,
+  as is a URL that is not a valid URL (for example a broken IPv6 host or port).
 - URLs in error messages keep only scheme, host, port and path; userinfo, query strings and
   fragments are dropped (IPv6 hosts handled). Previously userinfo could appear in redirect,
   network and 401/403 messages.
