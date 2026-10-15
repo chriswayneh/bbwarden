@@ -187,6 +187,10 @@ def load_idp_csv(path):
             c.strip() for c in rd.fieldnames
         }:
             raise BadIdpFile(f"{path}: needs columns user,active")
+        names = [c.strip() for c in rd.fieldnames]
+        dupes = sorted({c for c in names if names.count(c) > 1})
+        if dupes:  # DictReader keeps only the last one, which could flip a verdict
+            raise BadIdpFile(f"{path}: duplicate column {', '.join(dupes)}")
         for row in rd:
             line = rd.line_num
             row = {k.strip(): (v or "").strip() for k, v in row.items() if k}
