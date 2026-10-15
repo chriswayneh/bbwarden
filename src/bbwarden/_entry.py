@@ -4,6 +4,8 @@ is still importing exits 130 with "interrupted" instead of a traceback. A Ctrl-C
 Python's own start-up, before this module runs, cannot be caught by any code in
 bbwarden."""
 
+from __future__ import annotations
+
 import os
 import sys
 
