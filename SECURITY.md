@@ -20,10 +20,11 @@ version, and the CHANGELOG Security section describes them.
 
 | Version | Supported |
 | --- | --- |
-| 0.2.3 | Yes (https only, redirects refused, terminal output escaped, IDN-safe origin check) |
-| 0.2.2 | No: upgrade to 0.2.3 (latest fixes) |
-| 0.2.1 | No: upgrade to 0.2.3 (names with control characters reached the terminal raw) |
-| 0.2.0 | No: upgrade to 0.2.3 (it allowed http:// to localhost and followed redirects) |
+| 0.2.4 | Yes (https only, redirects refused, terminal output escaped, IDN-safe origin check, complete offboarding, no silent partial results) |
+| 0.2.3 | No: upgrade to 0.2.4 (offboard left non-admin global permissions; partial pagination went unnoticed) |
+| 0.2.2 | No: upgrade to 0.2.4 (IDN hosts refused, plus the 0.2.3 issues) |
+| 0.2.1 | No: upgrade to 0.2.4 (names with control characters reached the terminal raw) |
+| 0.2.0 | No: upgrade to 0.2.4 (it allowed http:// to localhost and followed redirects) |
 | 0.1.x | No (demo only, no live hardening) |
 
 ## Security design notes

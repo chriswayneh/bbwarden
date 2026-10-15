@@ -111,13 +111,29 @@ def test_version_0_2_2_everywhere():
 
 
 def test_version_0_2_3_everywhere():
-    assert __version__ == "0.2.3"
-    assert "bbwarden 0.2.3" in (ROOT / "README.md").read_text()
+    """0.2.3 stays a dated release entry and is listed in SECURITY.md (superseded by 0.2.4)."""
     c = (ROOT / "CHANGELOG.md").read_text()
-    assert (
-        "## [0.2.3] - 2026-10-15" in c
-    )  # [Unreleased] above it is checked in test_secure
+    assert "## [0.2.3] - 2026-10-15" in c
     sec = (ROOT / "SECURITY.md").read_text()
-    assert re.search(r"\| 0\.2\.3 \| Yes", sec) and re.search(r"\| 0\.2\.2 \| No", sec)
+    assert re.search(r"\| 0\.2\.3 \| No: upgrade to 0\.2\.4", sec)
+    assert (
+        "- [x] IDN hostnames compared as requests sends them (`v0.2.3`)"
+        in (ROOT / "ROADMAP.md").read_text()
+    )
+
+
+def test_version_0_2_4_everywhere():
+    assert __version__ == "0.2.4"
+    assert "bbwarden 0.2.4" in (ROOT / "README.md").read_text()
+    c = (ROOT / "CHANGELOG.md").read_text()
+    assert "## [0.2.4] - 2026-10-15" in c and "## [Unreleased]" not in c
+    assert c.index("## [0.2.4]") < c.index("## [0.2.3]")
+    sec = (ROOT / "SECURITY.md").read_text()
+    rows = re.findall(r"^\| (0\.[0-9.x]+) \| (.*) \|$", sec, re.MULTILINE)
+    assert rows[0][0] == "0.2.4" and rows[0][1].startswith("Yes")
+    assert all(
+        v == "0.1.x" or s.startswith("No: upgrade to 0.2.4") for v, s in rows[1:]
+    )
     road = (ROOT / "ROADMAP.md").read_text()
-    assert "`v0.2.3` (2026-10-15)" in road and "Known limit for `v0.2.3`" not in road
+    assert "`v0.2.4` (2026-10-15)" in road and "Known limit for `v0.2.4`" not in road
+    assert "`v0.2.3` and `v0.2.4`" in road
