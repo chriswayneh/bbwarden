@@ -186,7 +186,9 @@ before anything is printed, without creating, truncating or removing it, and the
 to a temporary file next to it and renamed into place (so the folder must be writable; a symlink is followed and its target updated), and a failed write keeps the old file. An
 existing target that is not a regular file, such as a FIFO, `/dev/stdout`, `/dev/fd/N`
 (`--csv >(gzip > out.csv.gz)`) or a character device, is written directly instead. A Unix
-socket is refused up front with a configuration error (exit 2).
+socket is refused up front with a configuration error (exit 2). When the target is the file
+stdout already goes to (`--csv out.csv > out.csv` or `>> out.csv`), the CSV is written
+through stdout after the table, so the table, the CSV and any earlier content all stay.
 
 Terminal output is escaped: in table cells and in `error:`, `MANUAL`, `NOTE:` and log lines,
 control and format characters (C0, DEL, C1, Unicode Cc, Cf, Cs, Co, Cn, Zl, Zp) are shown as

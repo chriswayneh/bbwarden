@@ -271,6 +271,11 @@ def write_csv(rows, path, cols, raw=False):
     rename: the existing file's mode, or 0o666 minus the umask for a new file.
     An existing target that is not a regular file (a FIFO, /dev/stdout, /dev/fd/N, a
     character device) is written directly: it cannot be replaced by a rename."""
+    if _is_stdout(path):  # `--csv out.csv > out.csv`: append after the table, no rename
+        sys.stdout.flush()
+        _write_rows(sys.stdout, rows, cols, raw)
+        sys.stdout.flush()
+        return
     _refuse_socket(path)
     if _is_special(path):
         sys.stdout.flush()  # /dev/stdout: keep the table before the CSV
@@ -315,6 +320,22 @@ def _is_special(path):
     except OSError:
         return False
     return not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode))
+
+
+def _is_stdout(path):
+    """True when path is the very file stdout points at (same device and inode), for
+    example `--csv out.csv > out.csv`. A stdout without a real file descriptor (pytest
+    capture, an io.StringIO) never matches."""
+    try:
+        out = os.fstat(sys.stdout.fileno())
+        st = os.stat(path)
+    except (
+        AttributeError,
+        OSError,
+        ValueError,
+    ):  # io.UnsupportedOperation is an OSError
+        return False
+    return (st.st_dev, st.st_ino) == (out.st_dev, out.st_ino)
 
 
 def _refuse_socket(path):
@@ -487,6 +508,8 @@ def _check_writable(path):
     """Fail before any output if the CSV path cannot be written. Never creates, truncates
     or removes the target itself: an existing file is opened for append only, and the
     directory is probed with a temporary sibling (write_csv renames one into place)."""
+    if _is_stdout(path):  # written through stdout itself; the folder does not matter
+        return
     _refuse_socket(path)
     if _is_special(path):  # opening a FIFO here would block or eat the reader's EOF
         if not os.access(path, os.W_OK):
