@@ -57,10 +57,12 @@ def test_cloud_pagination_follows_next_url():
     assert list(h.paginate("items")) == ["a", "b"]
 
 
-def test_cloud_pagination_stops_on_repeated_next():
+def test_cloud_pagination_repeated_next_raises():
+    """Was: stop silently. A repeated next link now raises (Codex F2, 0.2.4)."""
     loop = Resp(body={"values": ["x"], "next": "https://bb.example.com/loop?page=2"})
     h, _ = http({("GET", "/loop", None): loop})
-    assert list(h.paginate("loop")) == ["x", "x"]
+    with pytest.raises(BBWardenError, match="next link repeats"):
+        list(h.paginate("loop"))
 
 
 # ---- retry / backoff ----
