@@ -2,6 +2,7 @@ import argparse
 import builtins
 import copy
 import csv
+import errno
 import io
 import logging
 import os
@@ -454,21 +455,40 @@ EXIT_INCOMPLETE = 3  # finished, but part of the inventory could not be loaded
 EXIT_BROKEN_PIPE = 141  # 128 + SIGPIPE, as shells report `bbwarden ... | head`
 
 
-def broken_pipe_exit():
-    """stdout's reader went away: point stdout at os.devnull so the final flush at exit
-    cannot raise again ("Exception ignored ..."), then exit 141 quietly."""
+def stdout_to_devnull():
+    """stdout's reader went away: point stdout's file descriptor at os.devnull so later
+    writes and the final flush at exit cannot raise again ("Exception ignored ...")."""
     try:
         fd = sys.stdout.fileno()
-    except (AttributeError, OSError, ValueError):
-        sys.exit(EXIT_BROKEN_PIPE)
-    try:
         devnull = os.open(os.devnull, os.O_WRONLY)
-        try:
-            os.dup2(devnull, fd)
-        finally:
-            os.close(devnull)
+    except (AttributeError, OSError, ValueError):
+        return
+    try:
+        os.dup2(devnull, fd)
     except OSError:
         pass
+    finally:
+        os.close(devnull)
+
+
+def is_pipe_error(e):
+    """A write to stdout failed because its reader is gone. Windows reports a closed
+    pipe as EINVAL, so on stdout that counts too (best effort)."""
+    return isinstance(e, BrokenPipeError) or (
+        isinstance(e, OSError) and e.errno in (errno.EPIPE, errno.EINVAL)
+    )
+
+
+def after_final_flush_break(code):
+    """The break showed up only at the final flush: keep 1, 2 or 3, else 141."""
+    stdout_to_devnull()
+    return (
+        code if code in (EXIT_ERROR, EXIT_CONFIG, EXIT_INCOMPLETE) else EXIT_BROKEN_PIPE
+    )
+
+
+def broken_pipe_exit():
+    stdout_to_devnull()
     sys.exit(EXIT_BROKEN_PIPE)
 
 
@@ -484,7 +504,12 @@ def main(argv=None, env=None, **kw):
         logging.basicConfig(level=logging.WARNING, handlers=[handler])
     try:
         code = _run(args, env, **kw)
-        sys.stdout.flush()  # a closed reader shows up here, inside the handlers
+        try:
+            sys.stdout.flush()  # a closed reader may show up only here
+        except OSError as e:
+            if not is_pipe_error(e):
+                raise
+            return after_final_flush_break(code)
         return code
     except BrokenPipeError:
         broken_pipe_exit()
@@ -631,7 +656,8 @@ def _run(args, env, **kw):
     except KeyError as e:
         sys.exit(f"error: {escape(e.args[0])}")
     cols = COLUMNS[args.cmd]
-    print(table(rows, cols))
+    out = _Stdout()
+    out.print(table(rows, cols))
     if ws.manual:
         total = len(rows)
         print(
@@ -643,7 +669,7 @@ def _run(args, env, **kw):
             print(f"  MANUAL  {escape(lab)}: {escape(why)}", file=sys.stderr)
         note = ""
     if note:
-        print(f"\n{note}")
+        out.print(f"\n{note}")
     for n in ws.notes:
         print(f"NOTE: {escape(n)}", file=sys.stderr)
     if ws.notes:  # every note is a part of the inventory that could not be loaded
@@ -653,10 +679,38 @@ def _run(args, env, **kw):
             file=sys.stderr,
         )
     if args.csv:
-        write_csv(rows, args.csv, cols, raw=args.raw_csv)
+        try:
+            write_csv(rows, args.csv, cols, raw=args.raw_csv)
+        except BrokenPipeError:  # a FIFO or /dev/stdout reader left
+            stdout_to_devnull()
+            out.broken = True
+    # Precedence: 2 (raised earlier), then 1, then 3, then 141, then 0.
     if ws.manual:
         return EXIT_ERROR
-    return EXIT_INCOMPLETE if ws.notes else EXIT_OK
+    if ws.notes:
+        return EXIT_INCOMPLETE
+    return EXIT_BROKEN_PIPE if out.broken else EXIT_OK
+
+
+class _Stdout:
+    """stdout that survives its reader leaving: the rest of the run (stderr reports,
+    CSV, exit code) goes on, and the broken pipe only decides the code if nothing
+    stronger does."""
+
+    def __init__(self):
+        self.broken = False
+
+    def print(self, text):
+        if self.broken:
+            return
+        try:
+            print(text)
+            sys.stdout.flush()
+        except OSError as e:
+            if not is_pipe_error(e):
+                raise
+            stdout_to_devnull()
+            self.broken = True
 
 
 if __name__ == "__main__":
