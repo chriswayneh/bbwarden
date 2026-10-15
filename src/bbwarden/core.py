@@ -340,7 +340,10 @@ def apply_regroup(ws, plan, backend=None):
     for step in plan:
         if step["action"] == "manual":  # never applied: report it so the run exits 1
             ws.manual.append(
-                (f"replace direct {step['user']} on repo {step['repo']}", step["detail"])
+                (
+                    f"replace direct {step['user']} on repo {step['repo']}",
+                    step["detail"],
+                )
             )
         if step["action"] != "replace":
             continue
