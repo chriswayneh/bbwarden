@@ -1,8 +1,9 @@
 import argparse
 import csv
+import logging
 import sys
 
-from . import core
+from . import __version__, core
 from .http import BBWardenError
 from .live import backend_from_env, crowd_from_env, crowd_status
 from .model import demo_workspace
@@ -35,6 +36,7 @@ def get_ws(args, env=None, **kw):
 
 def build_parser():
     p = argparse.ArgumentParser(prog="bbwarden", description="Bitbucket least-privilege and offboarding")
+    p.add_argument("--version", action="version", version=f"bbwarden {__version__}")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--demo", action="store_true", help="use built-in mock workspace")
     common.add_argument("--csv", metavar="OUT", help="also write results to CSV")
@@ -56,8 +58,21 @@ def build_parser():
 
 def main(argv=None, env=None, **kw):
     args = build_parser().parse_args(argv)
+    if not logging.getLogger("bbwarden").handlers:
+        logging.basicConfig(level=logging.WARNING, format="bbwarden: %(levelname)s %(message)s")
     try:
         return _run(args, env, **kw)
+    except core.PartialApply as e:
+        total = len(e.done) + 1 + len(e.pending)
+        print(f"\nAPPLY STOPPED: {len(e.done)} of {total} steps finished before a failure.",
+              file=sys.stderr)
+        for d in e.done:
+            print(f"  done    {d}", file=sys.stderr)
+        print(f"  FAILED  {e.failed}", file=sys.stderr)
+        for p in e.pending:
+            print(f"  not run {p}", file=sys.stderr)
+        print("Re-run the same command (without --apply first) to see what is left.", file=sys.stderr)
+        sys.exit(f"error: {e.error}")
     except BBWardenError as e:
         sys.exit(f"error: {e}")
 

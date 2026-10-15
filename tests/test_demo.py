@@ -64,4 +64,5 @@ def test_offboard(capsys):
 def test_csv_out(tmp_path):
     out = tmp_path / "o.csv"
     main(["direct", "--demo", "--csv", str(out)])
-    assert len(list(csv.DictReader(open(out)))) == 5
+    with open(out, newline="") as f:
+        assert len(list(csv.DictReader(f))) == 5

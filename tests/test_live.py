@@ -1,9 +1,9 @@
 import pytest
+from fakehttp import FakeSession, Resp
 
 from bbwarden.cli import main
 from bbwarden.http import AuthError, BBWardenError, Http
-from bbwarden.live import CloudBackend, DataCenter, backend_from_env, creds_from_env
-from fakehttp import FakeSession, Resp
+from bbwarden.live import CloudBackend, backend_from_env, creds_from_env
 
 SECRET = "s3cr3t-token-value"
 DC_ENV = {"BBWARDEN_URL": "https://bb.example.com", "BBWARDEN_USER": "svc", "BBWARDEN_TOKEN": SECRET}

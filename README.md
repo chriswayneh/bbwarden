@@ -11,6 +11,7 @@ commands are dry-run plans unless you pass `--apply`.
 
 ```
 pip install -e .
+bbwarden --version
 ```
 
 ## Quick start (no Bitbucket needed)
@@ -60,11 +61,19 @@ Hardening:
   honoring `Retry-After` (seconds or HTTP date), capped at 60 seconds per wait.
 - 401 and 403 produce a clear message naming what to fix. Errors never print
   credentials or URL query strings. Missing variables are named, not echoed.
+- `regroup` only picks a group when every member of that group already has at least the
+  same access on the repo, so replacing a direct grant never widens anyone's access. If no
+  such group exists the step is marked `manual`.
 - `regroup --apply` grants the group before removing the direct grant, so access is not
   lost if a call fails midway.
 - Pagination links pointing at a different host are refused, so credentials never leave
   your Bitbucket host. Network failures report the error type without echoing request details.
 - Unknown permission names from the API are shown as-is instead of crashing.
+- Account status shows as `UNKNOWN` in `who` when Bitbucket does not report it (always on
+  Cloud; Data Center users missing from the admin user list). bbwarden never assumes active.
+- If an `--apply` run fails partway, bbwarden stops, prints which steps finished, which step
+  failed and which were not run, logs the same to stderr, and exits non-zero. Re-run without
+  `--apply` to see the remaining plan.
 - Bitbucket Cloud does not expose account status, so use `orphans --idp csv` or `--idp crowd`
   for Cloud.
 - `--idp crowd` treats a user Crowd does not know (404) as disabled.
@@ -128,6 +137,7 @@ DRY RUN: re-run with --apply to make these changes
 
 ```
 pip install -e ".[dev]"
+ruff check .
 pytest -q
 ```
 

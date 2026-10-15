@@ -61,7 +61,7 @@ class DataCenter:
                 }
         _fill(ws, lambda g: [m["name"] for m in self.h.paginate(
             f"{p}/admin/groups/more-members", {"context": g})],
-            lambda: {u["name"]: u.get("active", True) for u in self.h.paginate(f"{p}/admin/users")})
+            lambda: {u["name"]: u.get("active") for u in self.h.paginate(f"{p}/admin/users")})
         return ws
 
     def remove_user(self, ws, scope, key, user):
@@ -134,11 +134,12 @@ def _fill(ws, members, statuses):
         for g in obj["groups"]:
             if g not in ws.groups:
                 ws.groups[g] = members(g)
-    names = set(u for m in ws.groups.values() for u in m)
+    names = {u for m in ws.groups.values() for u in m}
     for obj in list(ws.projects.values()) + list(ws.repos.values()):
         names |= set(obj["users"])
+    # None means unknown: Cloud exposes no account status, and Data Center may omit users.
     active = statuses() if statuses else {}
-    ws.users = {n: {"active": active.get(n, True)} for n in names}
+    ws.users = {n: {"active": active.get(n)} for n in names}
 
 
 def crowd_status(http, users):

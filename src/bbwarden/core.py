@@ -1,6 +1,18 @@
 """Analysis and fix planning. Pure functions over a Workspace."""
 import csv
-from .model import RANK, rank
+import logging
+
+from .model import rank
+
+log = logging.getLogger("bbwarden")
+
+
+class PartialApply(Exception):
+    """An --apply run failed partway. Carries the steps that finished and the failed step."""
+
+    def __init__(self, done, failed, error, pending=()):
+        super().__init__(str(error))
+        self.done, self.failed, self.error, self.pending = done, failed, error, list(pending)
 
 
 class AmbiguousRepo(KeyError):
@@ -57,7 +69,8 @@ def who(ws, target):
             cur["sources"].append(src)
     rows = []
     for (s, u), v in sorted(best.items()):
-        flag = "" if ws.users.get(u, {}).get("active", True) else "DISABLED"
+        active = ws.users.get(u, {}).get("active")
+        flag = "DISABLED" if active is False else ("UNKNOWN" if active is None else "")
         rows.append({"repo": s, "user": u, "effective": v["perm"],
                      "sources": ", ".join(sorted(set(v["sources"]))), "flag": flag})
     return rows
@@ -95,14 +108,29 @@ def orphans(ws, status):
     return rows
 
 
+def _effective(ws, slug):
+    out = {}
+    for u, p, _ in _grants(ws, slug):
+        out[u] = max(out.get(u, 0), rank(p))
+    return out
+
+
 def regroup(ws, slug):
-    """Plan: for each direct grant, pick a group the user belongs to, else flag."""
+    """Plan: for each direct grant, pick a group the user belongs to whose every member
+    already has at least that access on the repo, so the grant widens nobody's access.
+    Otherwise flag the grant for manual handling."""
     slug = resolve_repo(ws, slug)
     repo = ws.repos[slug]
+    eff = _effective(ws, slug)
     plan = []
     for u, p in sorted(repo["users"].items()):
-        groups = sorted(g for g, m in ws.groups.items() if u in m)
-        if groups:
+        mine = sorted(g for g, m in ws.groups.items() if u in m)
+        groups = [g for g in mine if all(eff.get(m, 0) >= rank(p) for m in ws.groups[g])]
+        if mine and not groups:
+            plan.append({"repo": slug, "user": u, "action": "manual", "group": "",
+                         "detail": f"every group of {u} ({', '.join(mine)}) would widen access; "
+                                   f"create a narrower group or keep direct {p}"})
+        elif groups:
             plan.append({"repo": slug, "user": u, "action": "replace", "group": groups[0],
                          "detail": f"grant group {groups[0]} {p}; remove direct {p}"})
         else:
@@ -111,21 +139,46 @@ def regroup(ws, slug):
     return plan
 
 
+def _run_steps(steps):
+    """Run (label, fn) pairs in order. On failure raise PartialApply listing finished labels."""
+    done = []
+    for i, (label, fn) in enumerate(steps):
+        try:
+            fn()
+        except Exception as e:
+            log.error("apply failed at step %r after %d finished: %s", label, len(done), e)
+            for d in done:
+                log.error("finished: %s", d)
+            raise PartialApply(done, label, e, [lb for lb, _ in steps[i + 1:]]) from e
+        done.append(label)
+        log.info("finished: %s", label)
+    return done
+
+
 def apply_regroup(ws, plan, backend=None):
     """Grant the group first, then drop the direct grant, so access is never lost mid-way."""
+    steps = []
     for step in plan:
         if step["action"] != "replace":
             continue
-        repo = ws.repos[step["repo"]]
-        perm = repo["users"][step["user"]]
-        g = step["group"]
-        if rank(repo["groups"].get(g)) < rank(perm):
+        key, u, g = step["repo"], step["user"], step["group"]
+        repo = ws.repos[key]
+        perm = repo["users"][u]
+
+        def grant(key=key, g=g, perm=perm, repo=repo):
+            if rank(repo["groups"].get(g)) < rank(perm):
+                if backend:
+                    backend.grant_group(ws, key, g, perm)
+                repo["groups"][g] = perm
+
+        def remove(key=key, u=u, repo=repo):
             if backend:
-                backend.grant_group(ws, step["repo"], g, perm)
-            repo["groups"][g] = perm
-        if backend:
-            backend.remove_user(ws, "repo", step["repo"], step["user"])
-        del repo["users"][step["user"]]
+                backend.remove_user(ws, "repo", key, u)
+            del repo["users"][u]
+
+        steps += [(f"grant group {g} {perm} on repo {key}", grant),
+                  (f"remove direct {u} from repo {key}", remove)]
+    return _run_steps(steps)
 
 
 def offboard(ws, user):
@@ -145,7 +198,7 @@ def offboard(ws, user):
 
 
 def apply_offboard(ws, user, plan, backend=None):
-    for step in plan:
+    def do(step):
         if backend:
             if step["scope"] == "group":
                 backend.remove_member(step["name"], user)
@@ -157,3 +210,6 @@ def apply_offboard(ws, user, plan, backend=None):
             ws.repos[step["name"]]["users"].pop(user, None)
         else:
             ws.groups[step["name"]].remove(user)
+
+    return _run_steps([(f"{s['action']} {user}: {s['scope']} {s['name']}", lambda s=s: do(s))
+                       for s in plan])

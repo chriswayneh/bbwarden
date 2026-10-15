@@ -57,7 +57,7 @@ class Http:
         for attempt in range(self.max_retries + 1):
             try:
                 resp = self.session.request(method, url, **kw)
-            except (OSError, IOError) as e:  # requests exceptions subclass IOError
+            except OSError as e:  # requests exceptions subclass IOError
                 raise BBWardenError(f"network error on {method} {_safe_url(url)}: "
                                     f"{type(e).__name__}") from None
             if resp.status_code in RETRY_STATUS and attempt < self.max_retries:
