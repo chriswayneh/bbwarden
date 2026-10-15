@@ -88,7 +88,7 @@ _CAUSE = "The above exception was the direct cause of the following exception:"
 _CONTEXT = "During handling of the above exception, another exception occurred:"
 
 
-MAX_EXC_DEPTH = (
+MAX_EXC_SHOWN = (
     50  # chained exceptions, ExceptionGroup nesting levels and members shown
 )
 
@@ -130,7 +130,7 @@ def _next_in_chain(exc):
 def _exc_lines(root):
     """Traceback lines for root, its chain (oldest first) and ExceptionGroup members.
     Iterative with an explicit stack, so no exception shape can hit the recursion limit;
-    chains and group nesting are cut at MAX_EXC_DEPTH with a "... more" line."""
+    chains and group nesting are cut at MAX_EXC_SHOWN with a "... more" line."""
     group_type = getattr(builtins, "BaseExceptionGroup", None)
     seen: set = set()
     out: list = []
@@ -144,7 +144,7 @@ def _exc_lines(root):
         chain: list = []
         seps: list = []
         exc = item
-        while exc is not None and id(exc) not in seen and len(chain) < MAX_EXC_DEPTH:
+        while exc is not None and id(exc) not in seen and len(chain) < MAX_EXC_SHOWN:
             seen.add(id(exc))
             chain.append(exc)
             exc, sep = _next_in_chain(exc)
@@ -172,16 +172,16 @@ def _exc_lines(root):
             seq.append(("line", _exc_text(e), prefix, depth))
             if group_type is not None and isinstance(e, group_type):
                 subs = list(e.exceptions)
-                if depth + 1 >= MAX_EXC_DEPTH:
+                if depth + 1 >= MAX_EXC_SHOWN:
                     msg = f"... ({len(subs)} sub-exceptions not shown: nested too deep)"
                     seq.append(("line", msg, prefix, depth))
                 else:
-                    for n, sub in enumerate(subs[:MAX_EXC_DEPTH], 1):
+                    for n, sub in enumerate(subs[:MAX_EXC_SHOWN], 1):
                         head = f"+---------------- sub-exception {n} of {len(subs)} ----------------"
                         seq.append(("line", head, prefix, depth))
                         seq.append(("exc", sub, prefix + "| ", depth + 1))
-                    if len(subs) > MAX_EXC_DEPTH:
-                        rest = len(subs) - MAX_EXC_DEPTH
+                    if len(subs) > MAX_EXC_SHOWN:
+                        rest = len(subs) - MAX_EXC_SHOWN
                         seq.append(
                             ("line", f"... ({rest} more sub-exceptions)", prefix, depth)
                         )

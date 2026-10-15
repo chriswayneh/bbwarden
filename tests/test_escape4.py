@@ -105,7 +105,7 @@ def test_recursion_limit_safe(capsys):
 
 
 def test_cap_is_documented():
-    assert 10 <= getattr(cli, "MAX_EXC_DEPTH", 0) <= 100
+    assert 10 <= getattr(cli, "MAX_EXC_SHOWN", 0) <= 100
 
 
 @needs_311

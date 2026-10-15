@@ -16,8 +16,9 @@ All notable changes to bbwarden are listed here. The format follows
   as `\\` so literal text cannot pass for an escape. Log messages are escaped with their
   arguments, and tracebacks line by line with each exception message and its notes
   escaped as one unit (chained exceptions and ExceptionGroup included; chains, group
-  nesting and members per group are cut at 50 and rendering can never make a log call fail), so a
-  newline in a name or error cannot forge a log line. argparse errors are escaped.
+  nesting and members per group are cut at 50 and rendering can never make a log call
+  fail), so a newline in a name or error cannot forge a log line. argparse errors are
+  escaped.
   Table columns are aligned by display width (wide characters 2; combining,
   nonspacing and enclosing marks, including variation selectors, 0).
 - The CSV formula guard skips leading control and format characters (for example `\u200b`
