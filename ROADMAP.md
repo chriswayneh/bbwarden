@@ -16,7 +16,7 @@ Plan for bbwarden by phase. Each phase ships something you can run from the comm
 | --- | --- | --- | --- | --- |
 | **0** | Foundation | `v0.1.0` | Five commands, demo mode, live Data Center reads, CSV, tests, CI | Done |
 | **1** | Connect | `v0.2.0` | Live Bitbucket Cloud, live Crowd lookup, live `--apply` | Done |
-| **2** | Harden | `v0.3.0` | Retries, paging, clear errors, exit codes, safe apply, https only, no redirects, no credentials in URLs | In progress (most shipped in `v0.2.0`, `v0.2.1` and `v0.2.2`) |
+| **2** | Harden | `v0.3.0` | Retries, paging, clear errors, exit codes, safe apply, https only, no redirects, no credentials in URLs, escaped output | In progress (most shipped in `v0.2.0`, `v0.2.1` and `v0.2.2`) |
 | **3** | Report | `v0.4.0` | JSON output, severity, exit-on-findings for CI | Planned |
 | **4** | Stable | `v1.0.0` | Stable CLI, flag names, report schema and exit codes | Planned |
 
