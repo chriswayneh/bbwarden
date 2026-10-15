@@ -32,8 +32,10 @@ def test_insecure_flag_reaches_backend(capsys):
     sess = FakeSession({("GET", "/rest/api/1.0/projects", None): page([]),
                         ("GET", "/rest/api/1.0/admin/users", None): page([])})
     env = {**BASE, "BBWARDEN_URL": "http://localhost:7990"}
-    with pytest.raises(SystemExit, match="--insecure"):
+    with pytest.raises(SystemExit) as e:
         main(["direct"], env=env, session_factory=lambda *a: sess)
+    assert e.value.code == 2
+    assert "error: BBWARDEN_URL must use https://" in capsys.readouterr().err
     main(["direct", "--insecure"], env=env, session_factory=lambda *a: sess)
     assert "WARNING" in capsys.readouterr().err
 
@@ -103,3 +105,81 @@ def test_security_md_private_contact_and_no_sla():
     assert "5 business days" not in s and "as soon as practical" in s
     assert "@chriswayneh" in s and "when the repository goes public" in s
     assert 'Security tab, "Report a vulnerability"), or' not in s
+
+
+# QE on 1cad405: config errors exit 2
+@pytest.mark.parametrize("env,needle", [
+    ({**BASE, "BBWARDEN_URL": "http://bb.example.com"}, "must use https://"),
+    ({**BASE, "BBWARDEN_URL": "https://"}, "no hostname"),
+    ({"BBWARDEN_URL": "https://bb.example.com"}, "missing BBWARDEN_USER, BBWARDEN_TOKEN"),
+    ({**BASE, "BBWARDEN_URL": "https://bitbucket.org"}, "missing BBWARDEN_WORKSPACE"),
+])
+def test_config_errors_exit_2_on_stderr(env, needle, capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["direct"], env=env, session_factory=lambda *a: None)
+    assert e.value.code == 2
+    err = capsys.readouterr().err
+    assert err.startswith("error: ") and needle in err and "t\n" not in err
+
+
+def test_runtime_errors_keep_exit_1(capsys):
+    from bbwarden import core
+    with pytest.raises(SystemExit) as e:
+        main(["who", "nope", "--demo"])
+    assert e.value.code != 2 and "unknown" in str(e.value)
+    assert core is not None
+
+
+# redirects are refused
+from bbwarden.http import Http
+
+
+@pytest.mark.parametrize("loc,host", [("http://bb.example.com/x", "bb.example.com"),
+                                      ("https://evil.example.net/steal", "evil.example.net")])
+def test_bitbucket_redirect_refused(loc, host):
+    sess = FakeSession({("GET", "/x", None): Resp(301, headers={"Location": loc + "?token=s3cr3t"})})
+    h = Http(sess, "https://bb.example.com", sleep=lambda s: None)
+    with pytest.raises(BBWardenError) as e:
+        h.get("x")
+    msg = str(e.value)
+    assert "301" in msg and "redirect" in msg and host in msg
+    assert "s3cr3t" not in msg and "/steal" not in msg
+    assert sess.allow_redirects is False
+
+
+@pytest.mark.parametrize("loc", ["http://crowd.example.com/u", "https://evil.example.net/u"])
+def test_crowd_redirect_refused(loc):
+    sess = FakeSession({("GET", "/rest/usermanagement/1/user", None): Resp(302, headers={"Location": loc})})
+    crowd = live.crowd_from_env(crowd_env(CROWD_APP_PASSWORD="p"), session_factory=lambda: sess)
+    with pytest.raises(BBWardenError, match="302 redirect"):
+        live.crowd_status(crowd, ["bob"])
+    assert sess.allow_redirects is False
+
+
+def test_followed_redirect_detected_by_history():
+    followed = Resp(200, body={})
+    followed.url = "https://evil.example.net/x"
+    followed.history = [Resp(301)]
+    sess = FakeSession({("GET", "/x", None): followed})
+    with pytest.raises(BBWardenError, match="redirect"):
+        Http(sess, "https://bb.example.com").get("x")
+
+
+def test_sessions_disable_redirects():
+    import requests
+    s = live.harden_session(requests.Session())
+    assert s.max_redirects == 0
+
+
+# 0.2.1 version hygiene
+def test_version_021():
+    import re
+
+    from bbwarden import __version__
+    assert __version__ == "0.2.1"
+    c = (ROOT / "CHANGELOG.md").read_text()
+    assert re.search(r"^## \[0\.2\.1\] - 2026-10-15", c, re.MULTILINE) and "[Unreleased]" not in c
+    assert "**Breaking**" in c.split("## [0.2.0]")[0]
+    sec = (ROOT / "SECURITY.md").read_text()
+    assert "0.2.1" in sec and "| 0.2.1 |" in sec
+    assert "bbwarden 0.2.1" in (ROOT / "README.md").read_text()

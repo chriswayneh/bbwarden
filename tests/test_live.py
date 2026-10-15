@@ -99,7 +99,7 @@ def test_missing_creds_named_without_values():
     assert "BBWARDEN_USER" in str(e.value) and SECRET not in str(e.value)
     with pytest.raises(SystemExit) as e:
         main(["direct"], env={})
-    assert "missing BBWARDEN_URL" in str(e.value)
+    assert e.value.code == 2
 
 
 def test_plain_http_rejected():
@@ -210,9 +210,10 @@ def test_crowd_orphans_live(capsys):
 
 
 def test_crowd_missing_creds():
-    with pytest.raises(SystemExit, match="CROWD_URL"):
+    with pytest.raises(SystemExit) as e:
         main(["orphans", "--idp", "crowd"], env=DC_ENV,
              session_factory=lambda *a: FakeSession(dc_routes()))
+    assert e.value.code == 2
 
 
 # ---- review fixes ----

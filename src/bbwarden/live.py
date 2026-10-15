@@ -3,7 +3,7 @@ import os
 import sys
 from urllib.parse import urlsplit
 
-from .http import AuthError, BBWardenError, Http, ManualStep
+from .http import AuthError, BBWardenError, ConfigError, Http, ManualStep, MissingConfig
 from .model import Workspace
 
 DC_PERM = {"REPO_READ": "READ", "REPO_WRITE": "WRITE", "REPO_ADMIN": "ADMIN",
@@ -35,14 +35,14 @@ def require_https(name, url, insecure):
     u = urlsplit(url)
     scheme = u.scheme.lower()
     if scheme in ("http", "https") and not u.hostname:
-        raise BBWardenError(f"{name} has no hostname: use a full URL such as https://bitbucket.example.com")
+        raise ConfigError(f"{name} has no hostname: use a full URL such as https://bitbucket.example.com")
     if scheme == "https":
         return
     if scheme == "http" and insecure:
         print(f"WARNING: --insecure: {name} uses http://, so credentials are sent in clear text",
               file=sys.stderr)
         return
-    raise BBWardenError(f"{name} must use https:// so credentials are not sent in clear text "
+    raise ConfigError(f"{name} must use https:// so credentials are not sent in clear text "
                         "(pass --insecure to allow http:// for a local test server)")
 
 
@@ -52,17 +52,24 @@ def creds_from_env(env=None, insecure=False):
     missing = [n for n, v in (("BBWARDEN_URL", url), ("BBWARDEN_USER", user),
                               ("BBWARDEN_TOKEN", token)) if not v]
     if missing:
-        raise AuthError(f"missing {', '.join(missing)}: set them in the environment or use --demo")
+        raise MissingConfig(f"missing {', '.join(missing)}: set them in the environment or use --demo")
     require_https("BBWARDEN_URL", url, insecure)
     return url, user, token
+
+
+def harden_session(session):
+    """Refuse redirects at the session level too (Http also passes allow_redirects=False)."""
+    session.max_redirects = 0
+    return session
 
 
 def make_session(url, user, token, cloud):  # pragma: no cover - thin wrapper over the library
     if cloud:
         from atlassian.bitbucket import Cloud
-        return Cloud(url="https://api.bitbucket.org/", username=user, password=token).session
+        return harden_session(Cloud(url="https://api.bitbucket.org/", username=user,
+                                    password=token).session)
     from atlassian import Bitbucket
-    return Bitbucket(url=url, username=user, password=token).session
+    return harden_session(Bitbucket(url=url, username=user, password=token).session)
 
 
 class DataCenter:
@@ -266,7 +273,7 @@ def backend_from_env(env=None, session_factory=make_session, insecure=False, **h
     if cloud:
         w = env.get("BBWARDEN_WORKSPACE")
         if not w:
-            raise BBWardenError("missing BBWARDEN_WORKSPACE (your Bitbucket Cloud workspace slug)")
+            raise ConfigError("missing BBWARDEN_WORKSPACE (your Bitbucket Cloud workspace slug)")
         http = Http(session_factory(url, user, token, True), "https://api.bitbucket.org", **http_kw)
         return CloudBackend(http, w)
     return DataCenter(Http(session_factory(url, user, token, False), url, **http_kw))
@@ -287,7 +294,7 @@ def crowd_creds(env=None):
                   file=sys.stderr)
             pw = env["CROWD_PASSWORD"]
     if not (url and app and pw):
-        raise AuthError("--idp crowd needs CROWD_URL, CROWD_APP and CROWD_APP_PASSWORD (Crowd "
+        raise MissingConfig("--idp crowd needs CROWD_URL, CROWD_APP and CROWD_APP_PASSWORD (Crowd "
                         "application credentials), or use --idp csv")
     return url, app, pw
 
@@ -297,7 +304,7 @@ def crowd_from_env(env=None, session_factory=None, insecure=False, **http_kw):
     require_https("CROWD_URL", url, insecure)
     if session_factory is None:  # pragma: no cover
         import requests
-        s = requests.Session()
+        s = harden_session(requests.Session())
         s.auth = (app, pw)
         s.headers["Accept"] = "application/json"
     else:

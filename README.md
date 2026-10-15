@@ -11,7 +11,7 @@ commands are dry-run plans unless you pass `--apply`.
 
 ```
 pip install -e .
-bbwarden --version    # bbwarden 0.2.0
+bbwarden --version    # bbwarden 0.2.1
 ```
 
 ## Quick start (no Bitbucket needed)
@@ -114,6 +114,8 @@ Hardening:
   `--insecure` allows `http://` for a local test server and prints a warning on stderr.
   There is no automatic localhost exception, so plain http is always an explicit choice.
   A URL without a hostname (`https://`, `https:x`) is refused.
+- Redirects are never followed. A 3xx response stops the run with an error naming only the
+  status and the target host; set the URL to the final `https://` address.
 - Pagination links must match the base URL scheme, host and port.
 - Rate-limit retries apply only to idempotent methods (GET, PUT, DELETE). A POST that gets
   429 or 503 is not retried; check the state and re-run.
@@ -219,6 +221,16 @@ pytest -q
 ```
 
 Tests run offline against demo data and a mocked HTTP session.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success (including dry runs) |
+| 1 | Runtime error: Bitbucket or Crowd error, unknown repo or user, bad IdP file, file error, an `--apply` that stopped partway, or an `offboard --apply` with MANUAL steps left |
+| 2 | Configuration or usage error: http refused, URL without a hostname, missing variable (for example `BBWARDEN_TOKEN`, `BBWARDEN_WORKSPACE`, Crowd credentials), `--idp csv` without `--idp-file`, or invalid arguments |
+
+Errors are printed to stderr as `error: ...`.
 
 ## Security
 

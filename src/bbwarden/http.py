@@ -15,12 +15,22 @@ class BBWardenError(Exception):
         self.status = status
 
 
-class ManualStep(BBWardenError):
-    """The step cannot be done by API and must be done by hand (e.g. Cloud workspace owner)."""
+class ConfigError(BBWardenError):
+    """Bad or missing configuration (environment, URL). The CLI exits with code 2."""
 
 
 class AuthError(BBWardenError):
     pass
+
+
+class MissingConfig(ConfigError, AuthError):
+    """A required credential or setting is not set."""
+
+
+class ManualStep(BBWardenError):
+    """The step cannot be done by API and must be done by hand (e.g. Cloud workspace owner)."""
+
+
 
 
 def _retry_after(resp):
@@ -72,6 +82,7 @@ class Http:
     def request(self, method, path, **kw):
         url = self.url(path)
         kw.setdefault("timeout", self.timeout)
+        kw["allow_redirects"] = False   # never follow: a redirect could carry credentials elsewhere
         for attempt in range(self.max_retries + 1):
             try:
                 resp = self.session.request(method, url, **kw)
@@ -88,6 +99,15 @@ class Http:
             break
         code = resp.status_code
         where = f"{method} {_safe_url(url)}"
+        history = getattr(resp, "history", None)
+        final = getattr(resp, "url", None)
+        if 300 <= code < 400 or history or (isinstance(final, str) and final
+                                             and _origin(final) != _origin(url)):
+            loc = resp.headers.get("Location") or (final if isinstance(final, str) else "") or ""
+            host = urlsplit(loc).hostname or "unknown host"
+            shown = code if 300 <= code < 400 else history[0].status_code if history else code
+            raise BBWardenError(f"HTTP {shown} redirect on {where} to {host}: redirects are refused; "
+                                "set the URL to the final https:// address", shown)
         if code == 401:
             raise AuthError(f"401 Unauthorized on {where}: check BBWARDEN_USER and BBWARDEN_TOKEN "
                             "(Cloud: app password or API token; Data Center: HTTP access token)", 401)

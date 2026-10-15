@@ -19,8 +19,9 @@ class FakeSession:
         self.routes = routes
         self.calls = []
 
-    def request(self, method, url, params=None, json=None, timeout=None):
+    def request(self, method, url, params=None, json=None, timeout=None, allow_redirects=True):
         self.calls.append((method, url, dict(params or {}), json))
+        self.allow_redirects = allow_redirects
         key_params = frozenset((params or {}).items())
         for (m, suffix, p), r in self.routes.items():
             if m == method and url.split("?")[0].endswith(suffix) and (p is None or p == key_params):

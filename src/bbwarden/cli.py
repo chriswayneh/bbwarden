@@ -5,7 +5,7 @@ import os
 import sys
 
 from . import __version__, core
-from .http import BBWardenError
+from .http import BBWardenError, ConfigError
 from .live import backend_from_env, crowd_from_env, crowd_status
 from .model import demo_workspace
 
@@ -78,12 +78,18 @@ def build_parser():
     return p
 
 
+EXIT_OK, EXIT_ERROR, EXIT_CONFIG = 0, 1, 2   # 2 also covers argparse usage errors
+
+
 def main(argv=None, env=None, **kw):
     args = build_parser().parse_args(argv)
     if not logging.getLogger("bbwarden").handlers:
         logging.basicConfig(level=logging.WARNING, format="bbwarden: %(levelname)s %(message)s")
     try:
         return _run(args, env, **kw)
+    except ConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(EXIT_CONFIG)
     except core.PartialApply as e:
         total = len(e.done) + 1 + len(e.pending)
         print(f"\nAPPLY STOPPED: {len(e.done)} of {total} steps finished before a failure.",
@@ -126,7 +132,7 @@ def _run(args, env, **kw):
         elif args.cmd == "orphans":
             if args.idp == "csv":
                 if not args.idp_file:
-                    sys.exit("error: --idp csv needs --idp-file")
+                    raise ConfigError("--idp csv needs --idp-file")
                 status = core.load_idp_csv(args.idp_file)
             elif args.demo:
                 status = {u: v["active"] for u, v in ws.users.items()}

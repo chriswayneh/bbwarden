@@ -4,7 +4,7 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.1] - 2026-10-15
 
 ### Added
 - `--insecure` flag to allow `http://` for `BBWARDEN_URL` and `CROWD_URL` (local test servers),
@@ -13,8 +13,16 @@ All notable changes to bbwarden are listed here. The format follows
 - SECURITY.md: private vulnerability reporting, supported versions, security design notes.
 
 ### Changed
-- `http://` is refused for every host unless `--insecure` is given. This replaces the
-  automatic `localhost` and `127.0.0.1` exception. URLs without a hostname are refused.
+- **Breaking**: `http://` is refused for every host unless `--insecure` is given. This drops
+  the automatic `localhost` and `127.0.0.1` exception from 0.2.0; add `--insecure` for a
+  local http test server. URLs without a hostname are refused.
+- Configuration errors (http refused, no hostname, missing variable) print `error: ...` to
+  stderr and exit with code 2. Other errors still exit with code 1.
+
+### Security
+- HTTP redirects are refused on every Bitbucket and Crowd request (`allow_redirects=False`
+  and `max_redirects=0` on the sessions). A 3xx response, or a response that was redirected
+  anyway, is an error naming only the status and the target host.
 
 ### Deprecated
 - `CROWD_PASSWORD`: still accepted, with a deprecation warning on stderr when it is used. If

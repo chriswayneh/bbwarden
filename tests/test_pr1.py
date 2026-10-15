@@ -80,11 +80,11 @@ def test_crowd_other_error_raises():
 
 # (f) version 0.2.0 everywhere plus changelog
 def test_version_consistent():
-    assert __version__ == "0.2.0"
+    """One source of truth: README and CHANGELOG follow bbwarden.__version__."""
     py = (ROOT / "pyproject.toml").read_text()
-    assert 'version = {attr = "bbwarden.__version__"}' in py and "0.1.0" not in py
-    assert "bbwarden 0.2.0" in (ROOT / "README.md").read_text()
-    assert re.search(r"^## \[0\.2\.0\]", (ROOT / "CHANGELOG.md").read_text(), re.MULTILINE)
+    assert 'version = {attr = "bbwarden.__version__"}' in py and not re.search(r'^version = "', py, re.MULTILINE)
+    assert f"bbwarden {__version__}" in (ROOT / "README.md").read_text()
+    assert re.search(rf"^## \[{re.escape(__version__)}\]", (ROOT / "CHANGELOG.md").read_text(), re.MULTILINE)
 
 
 # (g) nosec on jitter
