@@ -53,7 +53,8 @@ version, and the CHANGELOG Security section describes them.
   (since 0.2.2). `--raw-csv` keeps them, with a warning; formulas are still neutralized.
 - **No raw tracebacks (since 0.2.2).** An unexpected error prints a traceback with exception
   types only (no messages, notes or arguments that could carry secrets) and exits 1; log
-  tracebacks are rendered the same way. Ctrl-C prints `interrupted` and exits 130; a non-UTF-8 `--idp-file` is a configuration error (exit 2).
+  tracebacks are rendered the same way. Ctrl-C prints `interrupted` and exits 130; a
+  non-UTF-8 `--idp-file` is a configuration error (exit 2).
 - **Escaped terminal output (since 0.2.2).** Table cells and stderr lines print control and
   format characters (C0, DEL, C1, Unicode Cc, Cf, Cs, Co, Cn, Zl, Zp) as escaped code points,
   never raw; backslashes are doubled and log messages are escaped with their arguments.

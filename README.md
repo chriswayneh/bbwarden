@@ -288,6 +288,7 @@ Tests run offline against demo data and a mocked HTTP session.
 | 0 | Success (including dry runs) |
 | 1 | Runtime error: Bitbucket or Crowd error, unknown repo or user, bad IdP file, file error, an `--apply` that stopped partway, an `offboard --apply` with MANUAL steps left, or an unexpected internal error (printed as a traceback with exception types only) |
 | 2 | Configuration or usage error: http refused, URL that is not a valid URL, has no hostname, or contains embedded credentials, a query string or a fragment, missing variable (for example `BBWARDEN_TOKEN`, `BBWARDEN_WORKSPACE`, Crowd credentials), `--idp csv` without `--idp-file`, an `--idp-file` that is not UTF-8, or invalid arguments |
+| 130 | Interrupted (Ctrl-C) |
 
 Errors are printed to stderr as `error: ...`.
 
