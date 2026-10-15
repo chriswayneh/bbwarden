@@ -362,7 +362,11 @@ EXIT_INCOMPLETE = 3  # finished, but part of the inventory could not be loaded
 
 
 def main(argv=None, env=None, **kw):
-    args = build_parser().parse_args(argv)
+    try:  # Ctrl-C while argparse runs: same exit 130 as later, never a traceback
+        args = build_parser().parse_args(argv)
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        sys.exit(130)
     if not logging.getLogger("bbwarden").handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(EscapingFormatter("bbwarden: %(levelname)s %(message)s"))
