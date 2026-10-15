@@ -4,6 +4,10 @@ from dataclasses import dataclass, field
 RANK = {"READ": 1, "WRITE": 2, "ADMIN": 3}
 
 
+def rank(perm):
+    return RANK.get(perm, 0)
+
+
 @dataclass
 class Workspace:
     users: dict = field(default_factory=dict)       # user -> {"active": bool}
@@ -27,34 +31,3 @@ def demo_workspace():
             "infra": {"project": "OPS", "users": {"erin": "WRITE"}, "groups": {}},
         },
     )
-
-
-def load_live(url, username, token, cloud=False, workspace=None):  # pragma: no cover
-    """Build a Workspace from Bitbucket Data Center via atlassian-python-api."""
-    from atlassian import Bitbucket
-    if cloud:
-        raise NotImplementedError("Bitbucket Cloud live loading lands in milestone 2; use --demo")
-    bb = Bitbucket(url=url, username=username, password=token)
-    ws = Workspace()
-    for p in bb.project_list():
-        key = p["key"]
-        ws.projects[key] = {
-            "users": {u["user"]["name"]: u["permission"].split("_")[-1] for u in bb.project_users(key)},
-            "groups": {g["group"]["name"]: g["permission"].split("_")[-1] for g in bb.project_groups(key)},
-        }
-        for r in bb.repo_list(key):
-            s = r["slug"]
-            ws.repos[s] = {
-                "project": key,
-                "users": {u["user"]["name"]: u["permission"].split("_")[-1] for u in bb.repo_users(key, s)},
-                "groups": {g["group"]["name"]: g["permission"].split("_")[-1] for g in bb.repo_groups(key, s)},
-            }
-    names = set()
-    for obj in list(ws.projects.values()) + list(ws.repos.values()):
-        names |= set(obj["users"])
-        for g in obj["groups"]:
-            if g not in ws.groups:
-                ws.groups[g] = [m["name"] for m in bb.group_members(g)]
-            names |= set(ws.groups[g])
-    ws.users = {n: {"active": True} for n in names}
-    return ws

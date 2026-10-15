@@ -1,0 +1,109 @@
+"""HTTP layer: retries with backoff, pagination, and safe auth errors."""
+import random
+import time
+from email.utils import parsedate_to_datetime
+from urllib.parse import urlsplit
+
+RETRY_STATUS = (429, 503)
+
+
+class BBWardenError(Exception):
+    """User-facing error. Message must never contain secrets."""
+
+
+class AuthError(BBWardenError):
+    pass
+
+
+def _retry_after(resp):
+    val = resp.headers.get("Retry-After")
+    if not val:
+        return None
+    try:
+        return max(0.0, float(val))
+    except ValueError:
+        try:
+            return max(0.0, parsedate_to_datetime(val).timestamp() - time.time())
+        except (TypeError, ValueError):
+            return None
+
+
+def _safe_url(url):
+    """Drop query string, which could carry tokens."""
+    return url.split("?", 1)[0]
+
+
+class Http:
+    def __init__(self, session, base_url, max_retries=5, base_delay=1.0, max_delay=60.0,
+                 sleep=time.sleep, timeout=30):
+        self.session = session
+        self.base = base_url.rstrip("/")
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.sleep = sleep
+        self.timeout = timeout
+
+    def url(self, path):
+        if path.startswith(("http://", "https://")):
+            if urlsplit(path).netloc != urlsplit(self.base).netloc:
+                raise BBWardenError(f"refusing to follow link to another host: {_safe_url(path)}")
+            return path
+        return f"{self.base}/{path.lstrip('/')}"
+
+    def request(self, method, path, **kw):
+        url = self.url(path)
+        kw.setdefault("timeout", self.timeout)
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = self.session.request(method, url, **kw)
+            except (OSError, IOError) as e:  # requests exceptions subclass IOError
+                raise BBWardenError(f"network error on {method} {_safe_url(url)}: "
+                                    f"{type(e).__name__}") from None
+            if resp.status_code in RETRY_STATUS and attempt < self.max_retries:
+                delay = _retry_after(resp)
+                if delay is None:
+                    delay = self.base_delay * (2 ** attempt) + random.uniform(0, self.base_delay)
+                self.sleep(min(delay, self.max_delay))
+                continue
+            break
+        code = resp.status_code
+        where = f"{method} {_safe_url(url)}"
+        if code == 401:
+            raise AuthError(f"401 Unauthorized on {where}: check BBWARDEN_USER and BBWARDEN_TOKEN "
+                            "(Cloud: app password or API token; Data Center: HTTP access token)")
+        if code == 403:
+            raise AuthError(f"403 Forbidden on {where}: the credentials work but lack permission "
+                            "(needs project/repo admin read; --apply needs admin write)")
+        if code in RETRY_STATUS:
+            raise BBWardenError(f"{code} on {where}: still rate limited after "
+                                f"{self.max_retries} retries; try again later")
+        if code >= 400:
+            raise BBWardenError(f"HTTP {code} on {where}")
+        return resp
+
+    def get(self, path, **kw):
+        return self.request("GET", path, **kw).json()
+
+    def paginate(self, path, params=None):
+        """Yield items across pages. Handles Cloud (next) and Data Center (isLastPage)."""
+        params = dict(params or {})
+        url = path
+        seen = set()
+        while True:
+            data = self.get(url, params=params)
+            yield from data.get("values", [])
+            if "next" in data or "isLastPage" not in data:   # Cloud style
+                nxt = data.get("next")
+                if not nxt or nxt in seen:
+                    return
+                seen.add(nxt)
+                url, params = nxt, None                   # next URL already carries params
+            else:                                         # Data Center style
+                if data.get("isLastPage", True) or data.get("nextPageStart") is None:
+                    return
+                start = data["nextPageStart"]
+                if start in seen:
+                    return
+                seen.add(start)
+                params["start"] = start

@@ -1,10 +1,11 @@
 import argparse
 import csv
-import os
 import sys
 
 from . import core
-from .model import demo_workspace, load_live
+from .http import BBWardenError
+from .live import backend_from_env, crowd_from_env, crowd_status
+from .model import demo_workspace
 
 
 def table(rows):
@@ -25,14 +26,11 @@ def write_csv(rows, path):
             wr.writerows(rows)
 
 
-def get_ws(args):
+def get_ws(args, env=None, **kw):
     if args.demo:
-        return demo_workspace()
-    url = os.environ.get("BBWARDEN_URL")
-    if not url:
-        sys.exit("error: set BBWARDEN_URL, BBWARDEN_USER, BBWARDEN_TOKEN or use --demo")
-    return load_live(url, os.environ.get("BBWARDEN_USER"), os.environ.get("BBWARDEN_TOKEN"),
-                     cloud="bitbucket.org" in url)
+        return demo_workspace(), None
+    backend = backend_from_env(env, **kw)
+    return backend.load(), backend
 
 
 def build_parser():
@@ -56,10 +54,18 @@ def build_parser():
     return p
 
 
-def main(argv=None):
+def main(argv=None, env=None, **kw):
     args = build_parser().parse_args(argv)
-    ws = get_ws(args)
+    try:
+        return _run(args, env, **kw)
+    except BBWardenError as e:
+        sys.exit(f"error: {e}")
+
+
+def _run(args, env, **kw):
+    ws, backend = get_ws(args, env, **{k: v for k, v in kw.items() if k != "crowd_session"})
     note = ""
+    target = "demo workspace" if args.demo else "Bitbucket"
     try:
         if args.cmd == "who":
             rows = core.who(ws, args.target)
@@ -73,24 +79,22 @@ def main(argv=None):
             elif args.demo:
                 status = {u: v["active"] for u, v in ws.users.items()}
             else:
-                sys.exit("error: live Crowd lookup lands in milestone 2; use --demo or --idp csv")
+                http_kw = {k: v for k, v in kw.items() if k not in ("session_factory", "crowd_session")}
+                crowd = crowd_from_env(env, session_factory=kw.get("crowd_session"), **http_kw)
+                status = crowd_status(crowd, sorted(ws.users))
             rows = core.orphans(ws, status)
         elif args.cmd == "regroup":
             rows = core.regroup(ws, args.repo)
             if args.apply:
-                if not args.demo:
-                    sys.exit("error: live --apply lands in milestone 2")
-                core.apply_regroup(ws, rows)
-                note = "APPLIED to demo workspace"
+                core.apply_regroup(ws, rows, backend)
+                note = f"APPLIED to {target}"
             else:
                 note = "DRY RUN: re-run with --apply to make these changes"
         elif args.cmd == "offboard":
             rows = core.offboard(ws, args.user)
             if args.apply:
-                if not args.demo:
-                    sys.exit("error: live --apply lands in milestone 2")
-                core.apply_offboard(ws, args.user, rows)
-                note = "APPLIED to demo workspace"
+                core.apply_offboard(ws, args.user, rows, backend)
+                note = f"APPLIED to {target}"
             else:
                 note = "DRY RUN: re-run with --apply to make these changes"
     except KeyError as e:

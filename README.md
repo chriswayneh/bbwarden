@@ -36,9 +36,40 @@ bbwarden offboard dave --demo
 | `regroup <repo> [--apply]` | Plan replacing direct grants with group grants |
 | `offboard <user> [--apply]` | Plan removing a user from every repo, project and group |
 
-Live mode reads `BBWARDEN_URL`, `BBWARDEN_USER` and `BBWARDEN_TOKEN`. Milestone 1 supports
-live read-only scans against Data Center; live Cloud, live Crowd lookup and live `--apply`
-are planned for milestone 2.
+## Live use
+
+Set credentials in the environment (never on the command line):
+
+| Variable | Meaning |
+| --- | --- |
+| `BBWARDEN_URL` | `https://bitbucket.org` for Cloud, or your Data Center base URL. Must be `https://`. |
+| `BBWARDEN_USER` | Username (Cloud: account username or email; Data Center: user or service account) |
+| `BBWARDEN_TOKEN` | Cloud app password or API token; Data Center HTTP access token or password |
+| `BBWARDEN_WORKSPACE` | Cloud only: workspace slug |
+| `CROWD_URL`, `CROWD_APP`, `CROWD_PASSWORD` | `--idp crowd` only: Crowd base URL and application credentials |
+
+Read commands need admin read on the projects and repos you scan (Data Center user
+status also needs system admin read). `--apply` needs admin write.
+
+Data Center repos are keyed `PROJECT/slug`; a bare slug works when it is unique.
+
+Hardening:
+
+- Every list call is paginated (Data Center `nextPageStart`, Cloud `next`).
+- HTTP 429 and 503 are retried up to 5 times with exponential backoff plus jitter,
+  honoring `Retry-After` (seconds or HTTP date), capped at 60 seconds per wait.
+- 401 and 403 produce a clear message naming what to fix. Errors never print
+  credentials or URL query strings. Missing variables are named, not echoed.
+- `regroup --apply` grants the group before removing the direct grant, so access is not
+  lost if a call fails midway.
+- Pagination links pointing at a different host are refused, so credentials never leave
+  your Bitbucket host. Network failures report the error type without echoing request details.
+- Unknown permission names from the API are shown as-is instead of crashing.
+- Bitbucket Cloud does not expose account status, so use `orphans --idp csv` or `--idp crowd`
+  for Cloud.
+- `--idp crowd` treats a user Crowd does not know (404) as disabled.
+
+`--idp csv` reads `--idp-file` with columns `user,active` (`true/false`, `1/0`, `yes/no`).
 
 ## Sample output
 
@@ -76,10 +107,10 @@ web   frank  direct:READ         disabled
 
 ```
 $ bbwarden regroup api --demo
-REPO  USER  ACTION   DETAIL
-----  ----  -------  -------------------------------------------------------
-api   bob   replace  remove direct ADMIN; grant group devs ADMIN
-api   erin  manual   no group contains erin; create one or keep direct WRITE
+REPO  USER  ACTION   GROUP  DETAIL
+----  ----  -------  -----  -------------------------------------------------------
+api   bob   replace  devs   grant group devs ADMIN; remove direct ADMIN
+api   erin  manual          no group contains erin; create one or keep direct WRITE
 
 DRY RUN: re-run with --apply to make these changes
 ```
@@ -99,6 +130,8 @@ DRY RUN: re-run with --apply to make these changes
 pip install -e ".[dev]"
 pytest -q
 ```
+
+Tests run offline against demo data and a mocked HTTP session.
 
 ## License
 

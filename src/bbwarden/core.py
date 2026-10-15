@@ -1,6 +1,10 @@
 """Analysis and fix planning. Pure functions over a Workspace."""
 import csv
-from .model import RANK
+from .model import RANK, rank
+
+
+class AmbiguousRepo(KeyError):
+    pass
 
 
 def _grants(ws, slug):
@@ -19,8 +23,28 @@ def _grants(ws, slug):
             yield u, p, f"project:{repo['project']}/group:{g}"
 
 
+def resolve_repo(ws, name):
+    """Accept a repo key, or a bare slug when it is unique (Data Center keys are PROJECT/slug)."""
+    if name in ws.repos:
+        return name
+    hits = [k for k in ws.repos if k.split("/")[-1] == name]
+    if len(hits) == 1:
+        return hits[0]
+    if hits:
+        raise AmbiguousRepo(f"ambiguous repo {name}: use one of {', '.join(sorted(hits))}")
+    raise KeyError(f"unknown repo: {name}")
+
+
 def who(ws, target):
-    slugs = [target] if target in ws.repos else [s for s, r in ws.repos.items() if r["project"] == target]
+    if target in ws.projects and target not in ws.repos:
+        slugs = [s for s, r in ws.repos.items() if r["project"] == target]
+    else:
+        try:
+            slugs = [resolve_repo(ws, target)]
+        except AmbiguousRepo:
+            raise
+        except KeyError:
+            slugs = []
     if not slugs:
         raise KeyError(f"unknown repo or project: {target}")
     best = {}
@@ -28,7 +52,7 @@ def who(ws, target):
         for u, p, src in _grants(ws, s):
             key = (s, u)
             cur = best.setdefault(key, {"perm": p, "sources": []})
-            if RANK[p] > RANK[cur["perm"]]:
+            if rank(p) > rank(cur["perm"]):
                 cur["perm"] = p
             cur["sources"].append(src)
     rows = []
@@ -73,30 +97,35 @@ def orphans(ws, status):
 
 def regroup(ws, slug):
     """Plan: for each direct grant, pick a group the user belongs to, else flag."""
-    if slug not in ws.repos:
-        raise KeyError(f"unknown repo: {slug}")
+    slug = resolve_repo(ws, slug)
     repo = ws.repos[slug]
     plan = []
     for u, p in sorted(repo["users"].items()):
         groups = sorted(g for g, m in ws.groups.items() if u in m)
         if groups:
-            plan.append({"repo": slug, "user": u, "action": "replace",
-                         "detail": f"remove direct {p}; grant group {groups[0]} {p}"})
+            plan.append({"repo": slug, "user": u, "action": "replace", "group": groups[0],
+                         "detail": f"grant group {groups[0]} {p}; remove direct {p}"})
         else:
-            plan.append({"repo": slug, "user": u, "action": "manual",
+            plan.append({"repo": slug, "user": u, "action": "manual", "group": "",
                          "detail": f"no group contains {u}; create one or keep direct {p}"})
     return plan
 
 
-def apply_regroup(ws, plan):
+def apply_regroup(ws, plan, backend=None):
+    """Grant the group first, then drop the direct grant, so access is never lost mid-way."""
     for step in plan:
         if step["action"] != "replace":
             continue
         repo = ws.repos[step["repo"]]
-        perm = repo["users"].pop(step["user"])
-        g = step["detail"].split("grant group ")[1].split()[0]
-        if RANK.get(repo["groups"].get(g), 0) < RANK[perm]:
+        perm = repo["users"][step["user"]]
+        g = step["group"]
+        if rank(repo["groups"].get(g)) < rank(perm):
+            if backend:
+                backend.grant_group(ws, step["repo"], g, perm)
             repo["groups"][g] = perm
+        if backend:
+            backend.remove_user(ws, "repo", step["repo"], step["user"])
+        del repo["users"][step["user"]]
 
 
 def offboard(ws, user):
@@ -115,8 +144,13 @@ def offboard(ws, user):
     return plan
 
 
-def apply_offboard(ws, user, plan):
+def apply_offboard(ws, user, plan, backend=None):
     for step in plan:
+        if backend:
+            if step["scope"] == "group":
+                backend.remove_member(step["name"], user)
+            else:
+                backend.remove_user(ws, step["scope"], step["name"], user)
         if step["scope"] == "project":
             ws.projects[step["name"]]["users"].pop(user, None)
         elif step["scope"] == "repo":
