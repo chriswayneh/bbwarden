@@ -23,6 +23,9 @@ class Workspace:
         default_factory=dict
     )  # user -> source, e.g. "global:SYS_ADMIN"
     admin_groups: dict = field(default_factory=dict)  # group -> source
+    # user -> direct global permission of any level (Data Center: LICENSED_USER,
+    # PROJECT_CREATE, ADMIN, SYS_ADMIN); offboard removes it even when it is not admin
+    global_perms: dict = field(default_factory=dict)
     notes: list = field(default_factory=list)  # gaps in what could be loaded
     manual: list = field(default_factory=list)  # apply steps that must be done by hand
 

@@ -171,6 +171,7 @@ class DataCenter:
 
         def admins():
             for x in self.h.paginate(f"{p}/admin/permissions/users"):
+                ws.global_perms[x["user"]["name"]] = x["permission"]
                 if x["permission"] in GLOBAL_ADMIN:
                     ws.admins[x["user"]["name"]] = f"global:{x['permission']}"
 
@@ -369,7 +370,7 @@ def _fill(ws, members, statuses):
     names = {u for m in ws.groups.values() for u in m}
     for obj in list(ws.projects.values()) + list(ws.repos.values()):
         names |= set(obj["users"])
-    names |= set(ws.admins)
+    names |= set(ws.admins) | set(ws.global_perms)
     # None means unknown: Cloud exposes no account status, and Data Center may omit users.
     active = statuses() if statuses else {}
     ws.users = {n: {"active": active.get(n)} for n in names}

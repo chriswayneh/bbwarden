@@ -377,10 +377,12 @@ def offboard(ws, user, memberships=True):
                     "detail": "",
                 }
             )
-    if (
-        user in ws.admins
-    ):  # last: may be impossible by API (Cloud owners), so it must not block the rest
-        kind, level = ws.admins[user].split(":", 1)
+    # Last: may be impossible by API (Cloud owners), so it must not block the rest. Any
+    # direct global permission counts, not only admin levels (LICENSED_USER, PROJECT_CREATE).
+    if user in ws.admins or user in ws.global_perms:
+        kind, level = ws.admins.get(user, f"global:{ws.global_perms.get(user)}").split(
+            ":", 1
+        )
         action = (
             "remove all global permissions"
             if kind == "global"
@@ -403,6 +405,7 @@ def apply_offboard(ws, user, plan, backend=None):
                 backend.remove_user(ws, step["scope"], step["name"], user)
         if step["scope"] == "global":
             ws.admins.pop(user, None)
+            ws.global_perms.pop(user, None)
         elif step["scope"] == "project":
             ws.projects[step["name"]]["users"].pop(user, None)
         elif step["scope"] == "repo":
