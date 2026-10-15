@@ -14,7 +14,8 @@ All notable changes to bbwarden are listed here. The format follows
   overrides. CSV output keeps the original data. Line and paragraph separators (U+2028,
   U+2029), private-use and unassigned code points are escaped too, and a backslash is shown
   as `\\` so literal text cannot pass for an escape. Log messages are escaped with their
-  arguments, and tracebacks line by line with exception messages escaped whole, so a
+  arguments, and tracebacks line by line with each exception message and its notes
+  escaped as one unit (chained exceptions and ExceptionGroup included), so a
   newline in a name or error cannot forge a log line. argparse errors are escaped.
   Table columns are aligned by display width (wide characters 2; combining,
   nonspacing and enclosing marks, including variation selectors, 0).

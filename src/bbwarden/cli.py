@@ -1,4 +1,5 @@
 import argparse
+import builtins
 import copy
 import csv
 import logging
@@ -67,24 +68,66 @@ class EscapingFormatter(logging.Formatter):
         return super().format(record)
 
     def formatException(self, ei):
-        """Traceback frames keep their line breaks, each line escaped. An exception message
-        ("Type: text", and notes) is escaped as a whole, so a newline in it cannot start a
-        forged log line."""
-        out = []
-        for chunk in traceback.TracebackException(*ei).format():
-            body = chunk.strip("\n")
-            if chunk.startswith(
-                ("Traceback", "  File", "\nThe above", "\nDuring handling")
-            ):
-                out += [escape(ln) for ln in body.split("\n")] if body else []
-                if chunk.startswith("\n"):
-                    out[-1:] = ["", out[-1], ""] if out else []
-            else:
-                out.append(escape(body))
-        return "\n".join(out)
+        """Rendered by _exc_lines, not traceback.format_exception: frame, source and chain
+        separator lines stay real lines (each escaped), while the exception text with its
+        notes is escaped as one unit, so a newline in a message or note shows as \\x0a and
+        cannot start a forged log line. Same output on Python 3.9 to 3.13."""
+        return "\n".join(_exc_lines(ei[1] if ei[1] is not None else ei[0]()))
 
     def formatStack(self, stack_info):
         return "\n".join(escape(ln) for ln in stack_info.split("\n"))
+
+
+_CAUSE = "The above exception was the direct cause of the following exception:"
+_CONTEXT = "During handling of the above exception, another exception occurred:"
+
+
+def _exc_text(exc):
+    """'module.Type: message' plus any __notes__ (3.11+), as one escaped line."""
+    t = type(exc)
+    name = (
+        t.__qualname__
+        if t.__module__ == "builtins"
+        else f"{t.__module__}.{t.__qualname__}"
+    )
+    try:
+        msg = str(exc)
+    except Exception:  # noqa: BLE001 - a broken __str__ must not break logging
+        msg = "<exception str() failed>"
+    text = (
+        f"{name}: {msg}" if msg else name
+    )  # ExceptionGroup str() has "(N sub-exceptions)"
+    notes = getattr(exc, "__notes__", None)
+    if isinstance(notes, (list, tuple)):
+        text = "\n".join([text] + [str(n) for n in notes])
+    return escape(text)
+
+
+def _exc_lines(exc, seen=None):
+    """Traceback lines for exc and its chain, oldest first, like the standard format."""
+    seen = set() if seen is None else seen
+    seen.add(id(exc))
+    out = []
+    cause, context = exc.__cause__, exc.__context__
+    if cause is not None and id(cause) not in seen:
+        out += _exc_lines(cause, seen) + ["", _CAUSE, ""]
+    elif (
+        context is not None and not exc.__suppress_context__ and id(context) not in seen
+    ):
+        out += _exc_lines(context, seen) + ["", _CONTEXT, ""]
+    if exc.__traceback__ is not None:
+        out.append("Traceback (most recent call last):")
+        for frame in traceback.format_tb(exc.__traceback__):
+            out += [escape(ln) for ln in frame.rstrip("\n").split("\n")]
+    out.append(_exc_text(exc))
+    eg = getattr(builtins, "BaseExceptionGroup", None)
+    if eg is not None and isinstance(exc, eg):
+        n = len(exc.exceptions)
+        for i, sub in enumerate(exc.exceptions, 1):
+            out.append(f"+---------------- sub-exception {i} of {n} ----------------")
+            out += ["| " + ln for ln in _exc_lines(sub, seen)]
+        out.append("+------------------------------------------------------")
+    return out
 
 
 def display_width(s):
