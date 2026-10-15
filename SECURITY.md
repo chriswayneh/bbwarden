@@ -21,7 +21,7 @@ version, and the CHANGELOG Security section describes them.
 | Version | Supported |
 | --- | --- |
 | 0.2.3 | Yes (https only, redirects refused, terminal output escaped, IDN-safe origin check) |
-| 0.2.2 | No: upgrade to 0.2.3 (IDN hostnames were refused as cross-host) |
+| 0.2.2 | No: upgrade to 0.2.3 (latest fixes) |
 | 0.2.1 | No: upgrade to 0.2.3 (names with control characters reached the terminal raw) |
 | 0.2.0 | No: upgrade to 0.2.3 (it allowed http:// to localhost and followed redirects) |
 | 0.1.x | No (demo only, no live hardening) |
