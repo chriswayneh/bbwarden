@@ -12,4 +12,11 @@ def run():
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
         sys.exit(130)
-    sys.exit(main())
+    try:
+        code = main()
+        sys.stdout.flush()
+    except BrokenPipeError:
+        from bbwarden.cli import broken_pipe_exit
+
+        broken_pipe_exit()
+    sys.exit(code)

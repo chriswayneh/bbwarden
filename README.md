@@ -310,6 +310,7 @@ Tests run offline against demo data and a mocked HTTP session.
 | 2 | Configuration or usage error: http refused, URL that is not a valid URL, has no hostname, or contains embedded credentials, a query string or a fragment, missing variable (for example `BBWARDEN_TOKEN`, `BBWARDEN_WORKSPACE`, Crowd credentials), `--idp csv` without `--idp-file`, an `--idp-file` that is not UTF-8, or invalid arguments |
 | 3 | Incomplete: the command finished, but part of the inventory could not be loaded (see the `NOTE:` and `INCOMPLETE:` lines on stderr), for example global admins without system admin rights. Codes 1 and 2 take precedence |
 | 130 | Interrupted (Ctrl-C), also during start-up and argument parsing; an interrupted `--apply` first lists the steps that finished |
+| 141 | stdout was closed by its reader (for example `bbwarden ... \| head`); output stops quietly, without a traceback (128 + SIGPIPE, the shell convention) |
 
 Errors are printed to stderr as `error: ...`.
 

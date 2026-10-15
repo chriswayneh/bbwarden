@@ -451,6 +451,25 @@ def build_parser():
 
 EXIT_OK, EXIT_ERROR, EXIT_CONFIG = 0, 1, 2  # 2 also covers argparse usage errors
 EXIT_INCOMPLETE = 3  # finished, but part of the inventory could not be loaded
+EXIT_BROKEN_PIPE = 141  # 128 + SIGPIPE, as shells report `bbwarden ... | head`
+
+
+def broken_pipe_exit():
+    """stdout's reader went away: point stdout at os.devnull so the final flush at exit
+    cannot raise again ("Exception ignored ..."), then exit 141 quietly."""
+    try:
+        fd = sys.stdout.fileno()
+    except (AttributeError, OSError, ValueError):
+        sys.exit(EXIT_BROKEN_PIPE)
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        try:
+            os.dup2(devnull, fd)
+        finally:
+            os.close(devnull)
+    except OSError:
+        pass
+    sys.exit(EXIT_BROKEN_PIPE)
 
 
 def main(argv=None, env=None, **kw):
@@ -464,7 +483,11 @@ def main(argv=None, env=None, **kw):
         handler.setFormatter(EscapingFormatter("bbwarden: %(levelname)s %(message)s"))
         logging.basicConfig(level=logging.WARNING, handlers=[handler])
     try:
-        return _run(args, env, **kw)
+        code = _run(args, env, **kw)
+        sys.stdout.flush()  # a closed reader shows up here, inside the handlers
+        return code
+    except BrokenPipeError:
+        broken_pipe_exit()
     except ConfigError as e:
         print(f"error: {escape(e)}", file=sys.stderr)
         sys.exit(EXIT_CONFIG)

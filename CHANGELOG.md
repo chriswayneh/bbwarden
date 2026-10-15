@@ -42,6 +42,8 @@ All notable changes to bbwarden are listed here. The format follows
   points at `bbwarden._entry:run`.
 
 ### Changed
+- New exit code 141 when stdout's reader goes away (`bbwarden ... | head`): output stops
+  quietly with no traceback or "Exception ignored" message, as with SIGPIPE.
 - CSV writes are atomic, so `--csv` needs a writable folder: a writable file in a read-only
   folder is now refused before any output (exit 1). The rename creates a new file, so the
   old file's owner, ACLs and extended attributes are not kept and hard links to it keep the
