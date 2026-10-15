@@ -104,8 +104,18 @@ def test_requests_floor():
 
 
 def test_version_0_2_2_everywhere():
-    assert __version__ == "0.2.2"
-    assert "bbwarden 0.2.2" in (ROOT / "README.md").read_text()
+    """0.2.2 stays a dated release entry and is listed in SECURITY.md (superseded by 0.2.3)."""
     assert "## [0.2.2] - 2026-10-15" in (ROOT / "CHANGELOG.md").read_text()
     sec = (ROOT / "SECURITY.md").read_text()
-    assert re.search(r"\| 0\.2\.2 \| Yes", sec) and re.search(r"\| 0\.2\.1 \| No", sec)
+    assert re.search(r"\| 0\.2\.2 \|", sec) and re.search(r"\| 0\.2\.1 \| No", sec)
+
+
+def test_version_0_2_3_everywhere():
+    assert __version__ == "0.2.3"
+    assert "bbwarden 0.2.3" in (ROOT / "README.md").read_text()
+    c = (ROOT / "CHANGELOG.md").read_text()
+    assert "## [0.2.3] - 2026-10-15" in c and "## [Unreleased]" not in c
+    sec = (ROOT / "SECURITY.md").read_text()
+    assert re.search(r"\| 0\.2\.3 \| Yes", sec) and re.search(r"\| 0\.2\.2 \| No", sec)
+    road = (ROOT / "ROADMAP.md").read_text()
+    assert "`v0.2.3` (2026-10-15)" in road and "Known limit for `v0.2.3`" not in road
