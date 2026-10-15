@@ -69,10 +69,13 @@ def _origin(url):
 def _redirect_error(status, location, where):
     """Status and target hostname only: never the path, query or credentials."""
     host = urlsplit(location or "").hostname or "unknown host"
+    head = (
+        f"redirect refused: {status} to {host}"
+        if status
+        else f"redirect refused to {host}"
+    )
     return BBWardenError(
-        f"redirect refused: {status} to {host} on {where}; set the URL to the "
-        "final https:// address",
-        status,
+        f"{head} on {where}; set the URL to the final https:// address", status
     )
 
 

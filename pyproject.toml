@@ -9,7 +9,7 @@ description = "Bitbucket least-privilege and offboarding CLI"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
-dependencies = ["atlassian-python-api>=3.41"]
+dependencies = ["atlassian-python-api>=3.41", "requests>=2.25"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "ruff>=0.6", "mypy>=1.10", "types-requests"]
