@@ -18,12 +18,20 @@ All notable changes to bbwarden are listed here. The format follows
 - When `--apply` fails partway, bbwarden prints and logs the steps that finished, the step
   that failed, and the steps not run.
 - Tests on mocked HTTP for pagination, retries, auth errors, and both live backends.
+- `who` includes Data Center global `ADMIN`/`SYS_ADMIN` users and groups, Cloud workspace
+  owners, and public repos (`(anyone)` row). Parts that need extra rights and cannot be loaded
+  produce a `NOTE:` on stderr. `offboard` plans removal of a Data Center global admin grant.
+- `orphans` reports people with access who are missing from the IdP export.
 
 ### Changed
 - Bitbucket Cloud users are keyed by `account_id` and shown as `nickname (account_id)`.
 - Account status is `UNKNOWN` when Bitbucket does not report it, instead of active.
 - `regroup` plan rows show the display label.
 - The version is read from `bbwarden.__version__`.
+- `--idp csv` is strict: unknown `active` values, empty users, duplicates and missing columns
+  are rejected with the line number.
+- `--csv` always writes a header row, with command-specific columns.
+- `regroup` says "no granted group" when it can only see groups that hold a grant.
 
 ### Fixed
 - `regroup --apply` could give repo access to group members who had none. It now only picks
@@ -31,6 +39,7 @@ All notable changes to bbwarden are listed here. The format follows
 - A grant with an unknown permission name is marked manual instead of being sent back as is.
 - Ambiguous or unknown users are refused by `offboard` instead of guessed.
 - Cloud group listings without a member list now stop the run instead of reading as empty.
+- Missing or unwritable files give a one-line error instead of a traceback.
 
 ### Security
 - Cloud is detected only for the exact hosts `bitbucket.org` and `api.bitbucket.org`, so a
@@ -39,6 +48,7 @@ All notable changes to bbwarden are listed here. The format follows
 - `BBWARDEN_URL` must be `https://`; plain `http://` only for `localhost` and `127.0.0.1`.
 - 401 and 403 errors name the fix and never print credentials or URL query strings.
 - Non-JSON responses and network errors report no response body or request details.
+- CSV exports neutralize spreadsheet formulas (CSV injection).
 
 ## [0.1.0] - 2026-10-14
 

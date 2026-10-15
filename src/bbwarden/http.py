@@ -10,6 +10,10 @@ RETRY_STATUS = (429, 503)
 class BBWardenError(Exception):
     """User-facing error. Message must never contain secrets."""
 
+    def __init__(self, msg, status=None):
+        super().__init__(msg)
+        self.status = status
+
 
 class AuthError(BBWardenError):
     pass
@@ -82,10 +86,10 @@ class Http:
         where = f"{method} {_safe_url(url)}"
         if code == 401:
             raise AuthError(f"401 Unauthorized on {where}: check BBWARDEN_USER and BBWARDEN_TOKEN "
-                            "(Cloud: app password or API token; Data Center: HTTP access token)")
+                            "(Cloud: app password or API token; Data Center: HTTP access token)", 401)
         if code == 403:
             raise AuthError(f"403 Forbidden on {where}: the credentials work but lack permission "
-                            "(needs project/repo admin read; --apply needs admin write)")
+                            "(needs project/repo admin read; --apply needs admin write)", 403)
         if code in RETRY_STATUS:
             if method.upper() not in IDEMPOTENT:
                 raise BBWardenError(f"{code} on {where}: not retried because {method} is not "
@@ -93,7 +97,7 @@ class Http:
             raise BBWardenError(f"{code} on {where}: still rate limited after "
                                 f"{self.max_retries} retries; try again later")
         if code >= 400:
-            raise BBWardenError(f"HTTP {code} on {where}")
+            raise BBWardenError(f"HTTP {code} on {where}", code)
         return resp
 
     def get(self, path, **kw):

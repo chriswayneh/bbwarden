@@ -15,6 +15,13 @@ class UnknownUser(KeyError):
     pass
 
 
+class BadIdpFile(ValueError):
+    pass
+
+
+PUBLIC = "(anyone)"
+
+
 def label(ws, u):
     """Display name: 'nickname (account_id)' when the key is an opaque id, else the key."""
     name = ws.users.get(u, {}).get("name")
@@ -60,6 +67,11 @@ def _grants(ws, slug):
     for g, p in proj["groups"].items():
         for u in ws.groups.get(g, []):
             yield u, p, f"project:{repo['project']}/group:{g}"
+    for u, src in ws.admins.items():
+        yield u, "ADMIN", src
+    for g, src in ws.admin_groups.items():
+        for u in ws.groups.get(g, []):
+            yield u, "ADMIN", f"{src}/group:{g}"
 
 
 def resolve_repo(ws, name):
@@ -100,6 +112,11 @@ def who(ws, target):
         flag = "DISABLED" if active is False else ("UNKNOWN" if active is None else "")
         rows.append({"repo": s, "user": label(ws, u), "effective": v["perm"],
                      "sources": ", ".join(sorted(set(v["sources"]))), "flag": flag})
+    for s in sorted(slugs):
+        if ws.repos[s].get("public"):
+            rows.append({"repo": s, "user": PUBLIC, "effective": "READ", "sources": "public",
+                         "flag": "PUBLIC"})
+    rows.sort(key=lambda r: (r["repo"], r["user"] == PUBLIC))
     return rows
 
 
@@ -114,12 +131,29 @@ def direct(ws):
     return rows
 
 
+TRUE = ("true", "1", "yes", "active")
+FALSE = ("false", "0", "no", "inactive", "disabled")
+
+
 def load_idp_csv(path):
-    """CSV with columns user,active (active: true/false/1/0/yes/no)."""
+    """Strict CSV with columns user,active. Bad rows raise BadIdpFile with the line number."""
     out = {}
     with open(path, newline="") as f:
-        for row in csv.DictReader(f):
-            out[row["user"].strip()] = row["active"].strip().lower() in ("true", "1", "yes", "active")
+        rd = csv.DictReader(f)
+        if not rd.fieldnames or not {"user", "active"} <= {c.strip() for c in rd.fieldnames}:
+            raise BadIdpFile(f"{path}: needs columns user,active")
+        for row in rd:
+            line = rd.line_num
+            row = {k.strip(): (v or "").strip() for k, v in row.items() if k}
+            user, val = row.get("user", ""), row.get("active", "").lower()
+            if not user:
+                raise BadIdpFile(f"{path} line {line}: empty user")
+            if val not in TRUE + FALSE:
+                raise BadIdpFile(f"{path} line {line}: active must be one of "
+                                 f"{'/'.join(TRUE + FALSE)}, got {val!r}")
+            if user in out:
+                raise BadIdpFile(f"{path} line {line}: duplicate user {user}")
+            out[user] = val in TRUE
     return out
 
 
@@ -129,10 +163,11 @@ def orphans(ws, status):
         seen = {}
         for u, p, src in _grants(ws, s):
             name = ws.users.get(u, {}).get("name")
-            if status.get(u, status.get(name, True)) is False:
-                seen.setdefault(u, []).append(f"{src}:{p}")
-        for u, srcs in sorted(seen.items()):
-            rows.append({"repo": s, "user": label(ws, u), "access": ", ".join(srcs), "idp_status": "disabled"})
+            st = status[u] if u in status else status.get(name)
+            if st is not True:
+                seen.setdefault(u, ["disabled" if st is False else "missing", []])[1].append(f"{src}:{p}")
+        for u, (st, srcs) in sorted(seen.items()):
+            rows.append({"repo": s, "user": label(ws, u), "access": ", ".join(srcs), "idp_status": st})
     return rows
 
 
@@ -167,7 +202,7 @@ def regroup(ws, slug):
                          "detail": f"grant group {groups[0]} {p}; remove direct {p}"})
         else:
             plan.append({"repo": slug, "user": label(ws, u), "key": u, "action": "manual", "group": "",
-                         "detail": f"no group contains {label(ws, u)}; create one or keep direct {p}"})
+                         "detail": f"no granted group contains {label(ws, u)}; create one or keep direct {p}"})
     return plan
 
 
@@ -215,6 +250,9 @@ def apply_regroup(ws, plan, backend=None):
 
 def offboard(ws, user, memberships=True):
     plan = []
+    if user in ws.admins:
+        plan.append({"scope": "global", "name": ws.admins[user].split(":", 1)[-1],
+                     "action": "remove global permission", "detail": "ADMIN"})
     for k, p in sorted(ws.projects.items()):
         if user in p["users"]:
             plan.append({"scope": "project", "name": k, "action": "remove direct grant",
@@ -232,11 +270,15 @@ def offboard(ws, user, memberships=True):
 def apply_offboard(ws, user, plan, backend=None):
     def do(step):
         if backend:
-            if step["scope"] == "group":
+            if step["scope"] == "global":
+                backend.remove_global(user)
+            elif step["scope"] == "group":
                 backend.remove_member(step["name"], user)
             else:
                 backend.remove_user(ws, step["scope"], step["name"], user)
-        if step["scope"] == "project":
+        if step["scope"] == "global":
+            ws.admins.pop(user, None)
+        elif step["scope"] == "project":
             ws.projects[step["name"]]["users"].pop(user, None)
         elif step["scope"] == "repo":
             ws.repos[step["name"]]["users"].pop(user, None)

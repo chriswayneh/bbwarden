@@ -13,13 +13,17 @@ class Workspace:
     users: dict = field(default_factory=dict)       # user -> {"active": bool}
     groups: dict = field(default_factory=dict)      # group -> [users]
     projects: dict = field(default_factory=dict)    # key -> {"users": {u: perm}, "groups": {g: perm}}
-    repos: dict = field(default_factory=dict)       # slug -> {"project": key, "users": {...}, "groups": {...}}
+    repos: dict = field(default_factory=dict)       # key -> {"project", "users", "groups", "public"?}
+    admins: dict = field(default_factory=dict)      # user -> source, e.g. "global:SYS_ADMIN"
+    admin_groups: dict = field(default_factory=dict)  # group -> source
+    notes: list = field(default_factory=list)       # gaps in what could be loaded
 
 
 def demo_workspace():
     return Workspace(
         users={"alice": {"active": True}, "bob": {"active": True}, "carol": {"active": True},
-               "dave": {"active": False}, "erin": {"active": True}, "frank": {"active": False}},
+               "dave": {"active": False}, "erin": {"active": True}, "frank": {"active": False},
+               "root": {"active": True}},
         groups={"devs": ["alice", "bob"], "ops": ["carol"], "admins": ["alice"]},
         projects={
             "CORE": {"users": {"dave": "WRITE"}, "groups": {"devs": "WRITE", "admins": "ADMIN"}},
@@ -27,7 +31,9 @@ def demo_workspace():
         },
         repos={
             "api": {"project": "CORE", "users": {"erin": "WRITE", "bob": "ADMIN"}, "groups": {}},
-            "web": {"project": "CORE", "users": {"frank": "READ"}, "groups": {"ops": "READ"}},
+            "web": {"project": "CORE", "users": {"frank": "READ"}, "groups": {"ops": "READ"},
+                    "public": True},
             "infra": {"project": "OPS", "users": {"erin": "WRITE"}, "groups": {}},
         },
+        admins={"root": "global:SYS_ADMIN"},
     )

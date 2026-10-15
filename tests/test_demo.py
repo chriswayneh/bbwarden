@@ -37,7 +37,7 @@ def test_orphans_csv(tmp_path):
     f = tmp_path / "idp.csv"
     f.write_text("user,active\nerin,false\nalice,true\n")
     rows = core.orphans(demo_workspace(), core.load_idp_csv(f))
-    assert {r["user"] for r in rows} == {"erin"}
+    assert {r["user"] for r in rows if r["idp_status"] == "disabled"} == {"erin"}
 
 
 def test_regroup_dry_and_apply(capsys):

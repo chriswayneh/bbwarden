@@ -152,7 +152,7 @@ def test_get_ws_demo_and_live():
 
 
 @pytest.mark.parametrize("val,expected", [("true", True), ("1", True), ("YES", True), (" active ", True),
-                                          ("false", False), ("0", False), ("no", False), ("", False)])
+                                          ("false", False), ("0", False), ("no", False)])
 def test_load_idp_csv_values(tmp_path, val, expected):
     f = tmp_path / "idp.csv"
     f.write_text(f"user,active\n bob ,{val}\n")
@@ -164,7 +164,8 @@ def test_orphans_cli_idp_csv(tmp_path, capsys):
     f.write_text("user,active\nerin,no\n")
     main(["orphans", "--idp", "csv", "--idp-file", str(f), "--demo"])
     out = capsys.readouterr().out
-    assert "erin" in out and "dave" not in out
+    disabled = [ln for ln in out.splitlines() if ln.endswith("disabled")]
+    assert disabled and all("erin" in ln for ln in disabled)
 
 
 def test_offboard_removes_direct_project_and_repo_grants():

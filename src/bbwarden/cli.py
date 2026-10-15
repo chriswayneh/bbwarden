@@ -11,8 +11,24 @@ from .model import demo_workspace
 HIDDEN = {"key"}   # internal fields kept on plan rows but never displayed or exported
 
 
+COLUMNS = {
+    "who": ["repo", "user", "effective", "sources", "flag"],
+    "direct": ["scope", "name", "user", "permission"],
+    "orphans": ["repo", "user", "access", "idp_status"],
+    "regroup": ["repo", "user", "action", "group", "detail"],
+    "offboard": ["scope", "name", "action", "detail"],
+}
+FORMULA = ("=", "+", "-", "@", "\t", "\r")
+
+
 def columns(rows):
     return [c for c in rows[0] if c not in HIDDEN]
+
+
+def _safe_cell(v):
+    """Neutralize spreadsheet formulas (CSV injection) by prefixing a single quote."""
+    v = str(v)
+    return "'" + v if v.startswith(FORMULA) else v
 
 
 def table(rows):
@@ -25,12 +41,12 @@ def table(rows):
                       "  ".join("-" * w[c] for c in cols)] + [line(r) for r in rows])
 
 
-def write_csv(rows, path):
+def write_csv(rows, path, cols):
+    """Always writes the header, even with no rows."""
     with open(path, "w", newline="") as f:
-        if rows:
-            wr = csv.DictWriter(f, fieldnames=columns(rows), extrasaction="ignore")
-            wr.writeheader()
-            wr.writerows(rows)
+        wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        wr.writeheader()
+        wr.writerows({c: _safe_cell(r.get(c, "")) for c in cols} for r in rows)
 
 
 def get_ws(args, env=None, **kw):
@@ -81,8 +97,10 @@ def main(argv=None, env=None, **kw):
             print(f"  not run {p}", file=sys.stderr)
         print("Re-run the same command (without --apply first) to see what is left.", file=sys.stderr)
         sys.exit(f"error: {e.error}")
-    except BBWardenError as e:
+    except (BBWardenError, core.BadIdpFile) as e:
         sys.exit(f"error: {e}")
+    except OSError as e:
+        sys.exit(f"error: cannot open {e.filename}: {e.strerror}")
 
 
 def _run(args, env, **kw):
@@ -128,8 +146,10 @@ def _run(args, env, **kw):
     print(table(rows))
     if note:
         print(f"\n{note}")
+    for n in ws.notes:
+        print(f"NOTE: {n}", file=sys.stderr)
     if args.csv:
-        write_csv(rows, args.csv)
+        write_csv(rows, args.csv, COLUMNS[args.cmd])
     return 0
 
 

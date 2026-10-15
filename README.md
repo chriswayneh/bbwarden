@@ -31,11 +31,34 @@ bbwarden offboard dave --demo
 
 | Command | What it does |
 | --- | --- |
-| `who <repo or project>` | Effective access per person and its source (direct, group, project) |
+| `who <repo or project>` | Access per person and its source (direct, group, project, global admin, public). See "What `who` covers" |
 | `direct` | Direct user grants that skip groups |
-| `orphans --idp crowd or csv` | People with access who are disabled in Crowd or an IdP CSV export (`--idp-file`, columns `user,active`) |
+| `orphans --idp crowd or csv` | People with access who are disabled in Crowd or an IdP CSV export (`--idp-file`, columns `user,active`), plus people the export does not list (`missing`) |
 | `regroup <repo> [--apply]` | Plan replacing direct grants with group grants |
-| `offboard <user> [--apply] [--skip-memberships]` | Plan removing a user from every repo, project and group |
+| `offboard <user> [--apply] [--skip-memberships]` | Plan removing a user's direct repo and project grants, group memberships, and Data Center global admin permission |
+
+## What `who` covers
+
+`who` reports access from:
+
+- direct repo grants, repo group grants, project grants and project group grants;
+- Data Center global `ADMIN` and `SYS_ADMIN` (users and groups), shown as `global:...` with
+  ADMIN effect, and Bitbucket Cloud workspace owners, shown as `workspace:owner`;
+- public repos (Data Center public repo or public project, Cloud repos that are not
+  private), shown as an `(anyone)` row with `PUBLIC` in the flag column.
+
+It does not cover: Data Center `PROJECT_CREATE` or licensed-user default permissions, branch
+permissions, access keys, repo access tokens, project or workspace default permissions on
+Cloud, or Cloud workspace members who only have default access. Permission names bbwarden
+does not know (for example `REPO_CREATE`, `PROJECT_VIEW`) are shown as-is and treated as no
+repo access, never guessed.
+
+Loading global admins needs Data Center system admin rights; loading Cloud workspace owners
+needs workspace admin rights. Without them bbwarden keeps going and prints a `NOTE:` to stderr
+saying that part was not loaded, so the result may be incomplete.
+
+On Cloud, workspace owners cannot be removed by API, so `offboard --apply` stops at that step
+and tells you to remove them in Workspace settings.
 
 ## Live use
 
@@ -100,7 +123,13 @@ Hardening:
   account_ids). A user Crowd does not know (404) counts as disabled; any other Crowd error
   stops the run.
 
-`--idp csv` reads `--idp-file` with columns `user,active` (`true/false`, `1/0`, `yes/no`).
+`--idp csv` reads `--idp-file` with columns `user,active`. `active` must be one of
+`true/1/yes/active` or `false/0/no/inactive/disabled`. Empty users, unknown values and
+duplicate users are rejected with the line number. People with access who are not in the file
+are reported as `missing`, so a partial export cannot look clean.
+
+`--csv` always writes a header row, even with no results, and prefixes cells starting with
+`=`, `+`, `-`, `@`, tab or carriage return with `'` so spreadsheets do not run them as formulas.
 
 ## Sample output
 
@@ -114,6 +143,20 @@ api   alice  ADMIN      project:CORE/group:admins, project:CORE/group:devs
 api   bob    ADMIN      direct, project:CORE/group:devs
 api   dave   WRITE      project:CORE                                        DISABLED
 api   erin   WRITE      direct
+api   root   ADMIN      global:SYS_ADMIN
+```
+
+```
+$ bbwarden who web --demo
+REPO  USER      EFFECTIVE  SOURCES                                             FLAG
+----  --------  ---------  --------------------------------------------------  --------
+web   alice     ADMIN      project:CORE/group:admins, project:CORE/group:devs
+web   bob       WRITE      project:CORE/group:devs
+web   carol     READ       group:ops
+web   dave      WRITE      project:CORE                                        DISABLED
+web   frank     READ       direct                                              DISABLED
+web   root      ADMIN      global:SYS_ADMIN
+web   (anyone)  READ       public                                              PUBLIC
 ```
 
 ```
@@ -139,9 +182,9 @@ web   frank  direct:READ         disabled
 ```
 $ bbwarden regroup api --demo
 REPO  USER  ACTION   GROUP  DETAIL
-----  ----  -------  -----  -------------------------------------------------------
+----  ----  -------  -----  ---------------------------------------------------------------
 api   bob   replace  devs   grant group devs ADMIN; remove direct ADMIN
-api   erin  manual          no group contains erin; create one or keep direct WRITE
+api   erin  manual          no granted group contains erin; create one or keep direct WRITE
 
 DRY RUN: re-run with --apply to make these changes
 ```

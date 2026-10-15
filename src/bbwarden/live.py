@@ -10,6 +10,20 @@ DC_PERM = {"REPO_READ": "READ", "REPO_WRITE": "WRITE", "REPO_ADMIN": "ADMIN",
 CLOUD_PERM = {"read": "READ", "write": "WRITE", "admin": "ADMIN", "create-repo": "WRITE"}
 
 
+GLOBAL_ADMIN = ("ADMIN", "SYS_ADMIN")   # Data Center global permissions that imply repo admin
+
+
+def _optional(ws, what, fn):
+    """Run a load step that needs extra rights. 403/404 become a note instead of a crash."""
+    try:
+        fn()
+    except BBWardenError as e:
+        if e.status in (403, 404):
+            ws.notes.append(f"{what} not loaded (HTTP {e.status}); effective access may be incomplete")
+        else:
+            raise
+
+
 def _perm(table, raw):
     """Map an API permission name; unknown values pass through upper-cased instead of crashing."""
     return table.get(raw, str(raw).upper())
@@ -46,6 +60,7 @@ class DataCenter:
         ws, p = Workspace(), "rest/api/1.0"
         for proj in self.h.paginate(f"{p}/projects"):
             k = proj["key"]
+            proj_public = bool(proj.get("public"))
             ws.projects[k] = {
                 "users": {u["user"]["name"]: _perm(DC_PERM, u["permission"])
                           for u in self.h.paginate(f"{p}/projects/{k}/permissions/users")},
@@ -56,11 +71,24 @@ class DataCenter:
                 s = r["slug"]
                 ws.repos[f"{k}/{s}"] = {
                     "project": k,
+                    "public": proj_public or bool(r.get("public")),
                     "users": {u["user"]["name"]: _perm(DC_PERM, u["permission"])
                               for u in self.h.paginate(f"{p}/projects/{k}/repos/{s}/permissions/users")},
                     "groups": {g["group"]["name"]: _perm(DC_PERM, g["permission"])
                                for g in self.h.paginate(f"{p}/projects/{k}/repos/{s}/permissions/groups")},
                 }
+        def admins():
+            for x in self.h.paginate(f"{p}/admin/permissions/users"):
+                if x["permission"] in GLOBAL_ADMIN:
+                    ws.admins[x["user"]["name"]] = f"global:{x['permission']}"
+
+        def admin_groups():
+            for x in self.h.paginate(f"{p}/admin/permissions/groups"):
+                if x["permission"] in GLOBAL_ADMIN:
+                    ws.admin_groups[x["group"]["name"]] = f"global:{x['permission']}"
+
+        _optional(ws, "global admin users", admins)
+        _optional(ws, "global admin groups", admin_groups)
         _fill(ws, lambda g: [m["name"] for m in self.h.paginate(
             f"{p}/admin/groups/more-members", {"context": g})],
             lambda: {u["name"]: u.get("active") for u in self.h.paginate(f"{p}/admin/users")})
@@ -76,6 +104,9 @@ class DataCenter:
                 members.append(user)
         if found:   # only a real membership makes the user known; a typo stays unknown
             ws.users.setdefault(user, {"active": None})
+
+    def remove_global(self, user):
+        self.h.request("DELETE", "rest/api/1.0/admin/permissions/users", params={"name": user})
 
     def remove_user(self, ws, scope, key, user):
         p = "rest/api/1.0"
@@ -115,6 +146,13 @@ class CloudBackend:
 
     def load(self):
         ws, w = Workspace(), self.w
+
+        def owners():
+            for x in self.h.paginate(f"2.0/workspaces/{w}/permissions"):
+                if x.get("permission") == "owner":
+                    ws.admins[self._user(x["user"])] = "workspace:owner"
+
+        _optional(ws, "workspace owners", owners)
         for proj in self.h.paginate(f"2.0/workspaces/{w}/projects"):
             k = proj["key"]
             ws.projects[k] = {
@@ -127,6 +165,7 @@ class CloudBackend:
             s = r["slug"]
             ws.repos[s] = {
                 "project": (r.get("project") or {}).get("key", ""),
+                "public": r.get("is_private") is False,
                 "users": {self._user(x["user"]): _perm(CLOUD_PERM, x["permission"]) for x in
                           self.h.paginate(f"2.0/repositories/{w}/{s}/permissions-config/users")},
                 "groups": {x["group"]["slug"]: _perm(CLOUD_PERM, x["permission"]) for x in
@@ -148,6 +187,10 @@ class CloudBackend:
         for k, n in self.names.items():
             ws.users.setdefault(k, {"active": None})["name"] = n
 
+    def remove_global(self, user):
+        raise BBWardenError("Bitbucket Cloud has no API to remove a workspace owner; "
+                            "remove them in Workspace settings, then re-run")
+
     def remove_user(self, ws, scope, key, user):
         self._uuid(user)   # fail on unknown users instead of guessing
         path = (f"2.0/workspaces/{self.w}/projects/{key}/permissions-config/users/{user}"
@@ -164,13 +207,14 @@ class CloudBackend:
 
 
 def _fill(ws, members, statuses):
-    for obj in list(ws.projects.values()) + list(ws.repos.values()):
-        for g in obj["groups"]:
-            if g not in ws.groups:
-                ws.groups[g] = members(g)
+    granted = [g for obj in list(ws.projects.values()) + list(ws.repos.values()) for g in obj["groups"]]
+    for g in granted + list(ws.admin_groups):
+        if g not in ws.groups:
+            ws.groups[g] = members(g)
     names = {u for m in ws.groups.values() for u in m}
     for obj in list(ws.projects.values()) + list(ws.repos.values()):
         names |= set(obj["users"])
+    names |= set(ws.admins)
     # None means unknown: Cloud exposes no account status, and Data Center may omit users.
     active = statuses() if statuses else {}
     ws.users = {n: {"active": active.get(n)} for n in names}

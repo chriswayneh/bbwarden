@@ -32,9 +32,10 @@ def test_cloud_load_memberships_missing_members_raises():
 # (b) status matching: key first, then display name; README says so
 def test_orphans_status_matching_key_then_name():
     ws = cloud_ws()
-    assert {r["user"] for r in core.orphans(ws, {"sam": False})} == {"sam (111)"}
-    assert {r["user"] for r in core.orphans(ws, {"111": False})} == {"sam (111)"}
-    assert core.orphans(ws, {"111": True, "sam": False}) == []      # key wins over name
+    dis = lambda st: {r["user"] for r in core.orphans(ws, st) if r["idp_status"] == "disabled"}
+    assert dis({"sam": False}) == {"sam (111)"}
+    assert dis({"111": False}) == {"sam (111)"}
+    assert dis({"111": True, "sam": False}) == set()      # key wins over name
 
 
 def test_readme_describes_status_matching():
@@ -112,7 +113,7 @@ def test_readme_samples_match_real_output():
     import subprocess
     import sys
     s = (ROOT / "README.md").read_text()
-    for cmd in ["who api", "direct", "orphans --idp crowd", "regroup api", "offboard dave"]:
+    for cmd in ["who api", "who web", "direct", "orphans --idp crowd", "regroup api", "offboard dave"]:
         out = subprocess.run([sys.executable, "-m", "bbwarden.cli", *cmd.split(), "--demo"],
                              capture_output=True, text=True, check=True).stdout
         assert f"$ bbwarden {cmd} --demo\n{out}```" in s, cmd
