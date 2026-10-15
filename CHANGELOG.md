@@ -4,7 +4,7 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-10-15
 
 ### Added
 - Live Bitbucket Cloud and Data Center backends built on atlassian-python-api sessions.
