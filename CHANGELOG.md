@@ -29,7 +29,8 @@ All notable changes to bbwarden are listed here. The format follows
   substitution, a character device) is written directly, with no temporary file or rename,
   as before. A Unix socket target is refused before any output with a configuration error
   (exit 2). A target that is the same file as stdout (`--csv out.csv > out.csv` or `>>`) is
-  written through stdout after the table instead of being replaced.
+  written through stdout after the table instead of being replaced. The CSV is always UTF-8,
+  whatever the console encoding (also for `/dev/stdout` and `/dev/tty`).
 - Crowd status needs a real boolean `active` flag; a string, number or missing flag is an
   error instead of a guess.
 - With `--raw-csv`, lone surrogates are written as U+FFFD, so they can no longer be confused

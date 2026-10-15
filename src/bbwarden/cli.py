@@ -2,6 +2,7 @@ import argparse
 import builtins
 import copy
 import csv
+import io
 import logging
 import os
 import secrets
@@ -272,9 +273,7 @@ def write_csv(rows, path, cols, raw=False):
     An existing target that is not a regular file (a FIFO, /dev/stdout, /dev/fd/N, a
     character device) is written directly: it cannot be replaced by a rename."""
     if _is_stdout(path):  # `--csv out.csv > out.csv`: append after the table, no rename
-        sys.stdout.flush()
-        _write_rows(sys.stdout, rows, cols, raw)
-        sys.stdout.flush()
+        _write_to_stdout(rows, cols, raw)
         return
     _refuse_socket(path)
     if _is_special(path):
@@ -322,6 +321,24 @@ def _is_special(path):
     return not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode))
 
 
+def _write_to_stdout(rows, cols, raw):
+    """CSV through stdout, still UTF-8 with \r\n rows whatever the console encoding:
+    a UTF-8 wrapper over stdout's byte buffer, detached afterwards so stdout stays open.
+    A stdout without a byte buffer (a StringIO) gets the text as is."""
+    sys.stdout.flush()  # the table goes first
+    buf = getattr(sys.stdout, "buffer", None)
+    if buf is None:
+        _write_rows(sys.stdout, rows, cols, raw)
+        sys.stdout.flush()
+        return
+    w = io.TextIOWrapper(buf, encoding="utf-8", newline="", write_through=True)
+    try:
+        _write_rows(w, rows, cols, raw)
+        w.flush()
+    finally:
+        w.detach()
+
+
 def _is_stdout(path):
     """True when path is the very file stdout points at (same device and inode), for
     example `--csv out.csv > out.csv`. A stdout without a real file descriptor (pytest
@@ -329,11 +346,8 @@ def _is_stdout(path):
     try:
         out = os.fstat(sys.stdout.fileno())
         st = os.stat(path)
-    except (
-        AttributeError,
-        OSError,
-        ValueError,
-    ):  # io.UnsupportedOperation is an OSError
+    # io.UnsupportedOperation is an OSError
+    except (AttributeError, OSError, ValueError):
         return False
     return (st.st_dev, st.st_ino) == (out.st_dev, out.st_ino)
 

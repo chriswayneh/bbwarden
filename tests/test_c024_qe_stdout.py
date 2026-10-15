@@ -63,3 +63,74 @@ def test_stdout_without_fileno_is_not_treated_as_the_target(tmp_path, monkeypatc
     cli._check_writable(str(p))
     cli.write_csv([{"user": "x"}], str(p), ["user"])
     assert p.read_text(encoding="utf-8").startswith("user")
+
+
+RUN_WITH_UMLAUT = """
+import sys
+from bbwarden import cli
+from bbwarden.model import demo_workspace
+ws = demo_workspace()
+ws.repos["web"]["users"]["j\\u00fcrgen"] = "READ"
+cli.get_ws = lambda args, env=None, **kw: (ws, None)
+sys.exit(cli.main(sys.argv[1:]))
+"""
+
+
+def _ascii_env():
+    return {**ENV, "PYTHONIOENCODING": "ascii:backslashreplace"}
+
+
+def _csv_part(data):
+    i = data.index(b"scope,name,user,permission")
+    return data[i:]
+
+
+def _assert_utf8_crlf(csv_bytes):
+    assert b"repo,web,j\xc3\xbcrgen,READ\r\n" in csv_bytes  # exact UTF-8 bytes
+    assert b"\r\r\n" not in csv_bytes
+    lines = csv_bytes.split(b"\r\n")
+    assert lines[-1] == b"" and all(b"\n" not in ln for ln in lines)
+
+
+@posix
+def test_csv_via_stdout_file_is_utf8_crlf_with_ascii_console(tmp_path):
+    out = tmp_path / "f.csv"
+    with open(out, "wb") as f:
+        r = subprocess.run(
+            [sys.executable, "-c", RUN_WITH_UMLAUT, "direct", "--csv", str(out)],
+            stdout=f,
+            stderr=subprocess.PIPE,
+            check=False,
+            env=_ascii_env(),
+            timeout=TIMEOUT,
+        )
+    assert r.returncode == 0, r.stderr
+    data = out.read_bytes()
+    assert b"j\\xfcrgen" in data[: data.index(b"scope,name")]  # table: console encoding
+    _assert_utf8_crlf(_csv_part(data))
+
+
+@posix
+@pytest.mark.skipif(not os.path.exists("/dev/stdout"), reason="needs /dev/stdout")
+def test_csv_to_dev_stdout_pipe_is_utf8_crlf_with_ascii_console():
+    r = subprocess.run(
+        [sys.executable, "-c", RUN_WITH_UMLAUT, "direct", "--csv", "/dev/stdout"],
+        capture_output=True,
+        check=False,
+        env=_ascii_env(),
+        timeout=TIMEOUT,
+    )
+    assert r.returncode == 0, r.stderr
+    _assert_utf8_crlf(_csv_part(r.stdout))
+
+
+def test_stdout_without_buffer_falls_back_to_text(monkeypatch, tmp_path):
+    import io
+
+    class TextOnly(io.StringIO):
+        pass
+
+    out = TextOnly()
+    monkeypatch.setattr(sys, "stdout", out)
+    cli._write_to_stdout([{"user": "j\u00fcrgen"}], ["user"], False)
+    assert out.getvalue() == "user\r\nj\u00fcrgen\r\n"

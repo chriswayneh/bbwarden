@@ -189,6 +189,7 @@ existing target that is not a regular file, such as a FIFO, `/dev/stdout`, `/dev
 socket is refused up front with a configuration error (exit 2). When the target is the file
 stdout already goes to (`--csv out.csv > out.csv` or `>> out.csv`), the CSV is written
 through stdout after the table, so the table, the CSV and any earlier content all stay.
+The CSV is always UTF-8 with `\r\n` rows, whatever the console encoding (also for `/dev/tty`).
 
 Terminal output is escaped: in table cells and in `error:`, `MANUAL`, `NOTE:` and log lines,
 control and format characters (C0, DEL, C1, Unicode Cc, Cf, Cs, Co, Cn, Zl, Zp) are shown as
