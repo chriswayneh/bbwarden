@@ -14,7 +14,7 @@ Built on [atlassian-python-api](https://github.com/atlassian-api/atlassian-pytho
 git clone https://github.com/chriswayneh/bbwarden.git
 cd bbwarden
 pip install -e .
-bbwarden --version    # bbwarden 0.2.1
+bbwarden --version    # bbwarden 0.2.2
 bbwarden who api --demo
 ```
 
@@ -162,8 +162,14 @@ duplicate users are rejected with the line number. People with access who are no
 are reported as `missing`, so a partial export cannot look clean.
 
 `--csv` always writes a header row, even with no results, and prefixes cells starting with
-`=`, `+`, `-`, `@`, tab or carriage return (also after leading whitespace) with `'` so
-spreadsheets do not run them as formulas. The CSV path is checked for writability before
+`=`, `+`, `-`, `@`, tab or carriage return (also after leading whitespace or invisible
+control and format characters such as `\u200b`) with `'` so spreadsheets do not run them as
+formulas. CSV cells keep the original data otherwise.
+
+Terminal output is escaped: in table cells and in `error:`, `MANUAL`, `NOTE:` and log lines,
+control and format characters (C0, DEL, C1, Unicode Cc, Cf, Cs) are shown as escaped code
+points such as `\x1b` or `\u202e`, so names from Bitbucket or an IdP cannot inject terminal
+escape sequences or bidi overrides. The CSV path is checked for writability before
 anything is printed.
 
 ### Sample output

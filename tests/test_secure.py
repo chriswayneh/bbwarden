@@ -232,17 +232,14 @@ def test_sessions_disable_redirects():
 
 # 0.2.1 version hygiene
 def test_version_021():
+    """0.2.1 stays a dated release entry with its breaking change (now superseded by 0.2.2)."""
     import re
 
-    from bbwarden import __version__
-
-    assert __version__ == "0.2.1"
     c = (ROOT / "CHANGELOG.md").read_text()
     assert (
         re.search(r"^## \[0\.2\.1\] - 2026-10-15", c, re.MULTILINE)
         and "[Unreleased]" not in c
     )
-    assert "**Breaking**" in c.split("## [0.2.0]")[0]
+    assert "**Breaking**" in c.split("## [0.2.1]")[1].split("## [0.2.0]")[0]
     sec = (ROOT / "SECURITY.md").read_text()
     assert "0.2.1" in sec and "| 0.2.1 |" in sec
-    assert "bbwarden 0.2.1" in (ROOT / "README.md").read_text()

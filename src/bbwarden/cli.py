@@ -3,6 +3,7 @@ import csv
 import logging
 import os
 import sys
+import unicodedata
 
 from . import __version__, core
 from .http import BBWardenError, ConfigError
@@ -21,17 +22,61 @@ COLUMNS = {
 FORMULA = ("=", "+", "-", "@", "\t", "\r")
 
 
+def _is_control(c):
+    """C0, DEL, C1, and Unicode Cc (control), Cf (format, incl. bidi overrides and zero-width
+    characters) and Cs (lone surrogates)."""
+    o = ord(c)
+    return (
+        o < 0x20 or 0x7F <= o <= 0x9F or unicodedata.category(c) in ("Cc", "Cf", "Cs")
+    )
+
+
+def escape(s):
+    """Text safe for a terminal: every control or format character becomes its escaped code
+    point (\\x1b, \\u202e, \\U000e0001), so names from Bitbucket or an IdP cannot move the
+    cursor, set the title, clear the screen or reorder text. Used for every table cell and
+    every stderr line built from data."""
+    out = []
+    for c in str(s):
+        if not _is_control(c):
+            out.append(c)
+        elif ord(c) <= 0xFF:
+            out.append(f"\\x{ord(c):02x}")
+        elif ord(c) <= 0xFFFF:
+            out.append(f"\\u{ord(c):04x}")
+        else:
+            out.append(f"\\U{ord(c):08x}")
+    return "".join(out)
+
+
+def _escape_lines(s):
+    """escape() per line, keeping the line breaks of multi-line messages."""
+    return "\n".join(escape(ln) for ln in str(s).split("\n"))
+
+
+class EscapingFormatter(logging.Formatter):
+    """Log lines go to stderr too, and step labels carry names from the server."""
+
+    def format(self, record):
+        return _escape_lines(super().format(record))
+
+
 def _safe_cell(v):
-    """Neutralize spreadsheet formulas (CSV injection) by prefixing a single quote,
-    also when the formula follows leading whitespace."""
+    """Neutralize spreadsheet formulas (CSV injection) by prefixing a single quote, also when
+    the formula follows leading whitespace or invisible control and format characters (for
+    example \\u200b or \\x1b). The data itself is kept as is."""
     v = str(v)
-    return "'" + v if v.startswith(FORMULA) or v.lstrip().startswith(FORMULA[:4]) else v
+    lead = v
+    while lead and (lead[0].isspace() or _is_control(lead[0])):
+        lead = lead[1:]
+    return "'" + v if v.startswith(FORMULA) or lead.startswith(FORMULA[:4]) else v
 
 
 def table(rows, cols):
     if not rows:
         return "(no results)"
-    w = {c: max(len(c), *(len(str(r[c])) for r in rows)) for c in cols}
+    rows = [{c: escape(r.get(c, "")) for c in cols} for r in rows]
+    w = {c: max(len(c), *(len(r[c]) for r in rows)) for c in cols}
     line = lambda r: "  ".join(str(r[c]).ljust(w[c]) for c in cols).rstrip()
     return "\n".join(
         [line({c: c.upper() for c in cols}), "  ".join("-" * w[c] for c in cols)]
@@ -102,13 +147,13 @@ EXIT_OK, EXIT_ERROR, EXIT_CONFIG = 0, 1, 2  # 2 also covers argparse usage error
 def main(argv=None, env=None, **kw):
     args = build_parser().parse_args(argv)
     if not logging.getLogger("bbwarden").handlers:
-        logging.basicConfig(
-            level=logging.WARNING, format="bbwarden: %(levelname)s %(message)s"
-        )
+        handler = logging.StreamHandler()
+        handler.setFormatter(EscapingFormatter("bbwarden: %(levelname)s %(message)s"))
+        logging.basicConfig(level=logging.WARNING, handlers=[handler])
     try:
         return _run(args, env, **kw)
     except ConfigError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f"error: {escape(e)}", file=sys.stderr)
         sys.exit(EXIT_CONFIG)
     except core.PartialApply as e:
         total = len(e.done) + 1 + len(e.pending)
@@ -117,21 +162,23 @@ def main(argv=None, env=None, **kw):
             file=sys.stderr,
         )
         for d in e.done:
-            print(f"  done    {d}", file=sys.stderr)
-        print(f"  FAILED  {e.failed}", file=sys.stderr)
+            print(f"  done    {escape(d)}", file=sys.stderr)
+        print(f"  FAILED  {escape(e.failed)}", file=sys.stderr)
         for p in e.pending:
-            print(f"  not run {p}", file=sys.stderr)
+            print(f"  not run {escape(p)}", file=sys.stderr)
         print(
             "Re-run the same command (without --apply first) to see what is left.",
             file=sys.stderr,
         )
-        sys.exit(f"error: {core.describe_error(e.error)}")
+        sys.exit(f"error: {escape(core.describe_error(e.error))}")
     except (BBWardenError, core.BadIdpFile) as e:
-        sys.exit(f"error: {e}")
+        sys.exit(f"error: {escape(e)}")
     except OSError as e:
         if e.filename:
-            sys.exit(f"error: cannot open {e.filename}: {e.strerror or e}")
-        sys.exit(f"error: {e.strerror or e}")
+            sys.exit(
+                f"error: cannot open {escape(e.filename)}: {escape(e.strerror or e)}"
+            )
+        sys.exit(f"error: {escape(e.strerror or e)}")
 
 
 def _check_writable(path):
@@ -197,7 +244,7 @@ def _run(args, env, **kw):
             else:
                 note = "DRY RUN: re-run with --apply to make these changes"
     except KeyError as e:
-        sys.exit(f"error: {e.args[0]}")
+        sys.exit(f"error: {escape(e.args[0])}")
     cols = COLUMNS[args.cmd]
     print(table(rows, cols))
     if ws.manual:
@@ -208,12 +255,12 @@ def _run(args, env, **kw):
             file=sys.stderr,
         )
         for lab, why in ws.manual:
-            print(f"  MANUAL  {lab}: {why}", file=sys.stderr)
+            print(f"  MANUAL  {escape(lab)}: {escape(why)}", file=sys.stderr)
         note = ""
     if note:
         print(f"\n{note}")
     for n in ws.notes:
-        print(f"NOTE: {n}", file=sys.stderr)
+        print(f"NOTE: {escape(n)}", file=sys.stderr)
     if args.csv:
         write_csv(rows, args.csv, cols)
     return 1 if ws.manual else 0
