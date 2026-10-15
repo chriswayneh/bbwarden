@@ -6,8 +6,8 @@ Plan for bbwarden by phase. Each phase ships something you can run from the comm
 
 | Item | Details |
 | --- | --- |
-| **Latest release** | `v0.2.0` (2026-10-15). See [CHANGELOG.md](CHANGELOG.md). |
-| **Next** | Finish Phase 2: Harden (most of it shipped in `v0.2.0`) |
+| **Latest release** | `v0.2.1` (2026-10-15). See [CHANGELOG.md](CHANGELOG.md). |
+| **Next** | Finish Phase 2: Harden (most of it shipped in `v0.2.0` and `v0.2.1`) |
 | **Next target** | `v0.3.0` |
 
 ## Phase map
@@ -16,7 +16,7 @@ Plan for bbwarden by phase. Each phase ships something you can run from the comm
 | --- | --- | --- | --- | --- |
 | **0** | Foundation | `v0.1.0` | Five commands, demo mode, live Data Center reads, CSV, tests, CI | Done |
 | **1** | Connect | `v0.2.0` | Live Bitbucket Cloud, live Crowd lookup, live `--apply` | Done |
-| **2** | Harden | `v0.3.0` | Retries, paging, clear errors, exit codes, safe apply | In progress (most shipped in `v0.2.0`) |
+| **2** | Harden | `v0.3.0` | Retries, paging, clear errors, exit codes, safe apply, https only, no redirects, no credentials in URLs | In progress (most shipped in `v0.2.0` and `v0.2.1`) |
 | **3** | Report | `v0.4.0` | JSON output, severity, exit-on-findings for CI | Planned |
 | **4** | Stable | `v1.0.0` | Stable CLI, flag names, report schema and exit codes | Planned |
 
@@ -57,7 +57,8 @@ Plan for bbwarden by phase. Each phase ships something you can run from the comm
 - [x] Retries for 429 and 503 on idempotent methods with `Retry-After` and capped backoff (`v0.2.0`)
 - [ ] Retries for other 5xx and connection errors
 - [x] One-line `error:` messages for auth, URL and permission failures, no tracebacks (`v0.2.0`)
-- [ ] Documented exit codes, including partial apply
+- [x] Documented exit codes, including partial apply (`v0.2.1`)
+- [x] https only (`--insecure` to allow http), redirects never followed, no credentials, query or fragment in `BBWARDEN_URL`/`CROWD_URL` (`v0.2.1`)
 - [x] `--apply` reports which steps finished, failed and were not run (`v0.2.0`)
 - [ ] Warn before removing a user's last admin path
 - [x] CSV formula injection escaped (`v0.2.0`)

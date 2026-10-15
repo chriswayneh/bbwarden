@@ -257,7 +257,7 @@ flowchart LR
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md). v0.2.0 shipped the live Cloud, Crowd and `--apply` work and most of the hardening. Next up is finishing Phase 2, then Phase 3: JSON output and CI-friendly exit-on-findings.
+See [ROADMAP.md](ROADMAP.md). v0.2.0 shipped the live Cloud, Crowd and `--apply` work and most of the hardening; v0.2.1 added https only, no redirects, no credentials in URLs and documented exit codes. Next up is finishing Phase 2, then Phase 3: JSON output and CI-friendly exit-on-findings.
 
 ## Development
 
