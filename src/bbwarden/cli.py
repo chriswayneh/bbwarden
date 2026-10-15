@@ -5,6 +5,7 @@ import csv
 import logging
 import os
 import sys
+import tempfile
 import traceback
 import unicodedata
 
@@ -259,11 +260,47 @@ def table(rows, cols):
 
 
 def write_csv(rows, path, cols, raw=False):
-    """UTF-8, always with the header row, even with no rows. See _safe_cell for raw."""
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
-        wr.writeheader()
-        wr.writerows({c: _safe_cell(r.get(c, ""), raw) for c in cols} for r in rows)
+    """UTF-8, always with the header row, even with no rows. See _safe_cell for raw.
+    Written to a temporary sibling and renamed over the target, so a failed write
+    never leaves a truncated file and never destroys the previous one."""
+    if os.path.isdir(path):
+        raise IsADirectoryError(21, "Is a directory", path)
+    fd, tmp = _temp_sibling(path)
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8") as f:
+            wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+            wr.writeheader()
+            wr.writerows({c: _safe_cell(r.get(c, ""), raw) for c in cols} for r in rows)
+        os.chmod(tmp, _target_mode(path))
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _temp_sibling(path):
+    """A new temporary file next to path. Errors name path, not the random temp name."""
+    try:
+        return tempfile.mkstemp(
+            prefix=".bbwarden-",
+            suffix=".tmp",
+            dir=os.path.dirname(os.path.abspath(path)),
+        )
+    except OSError as e:
+        raise OSError(e.errno, e.strerror, path) from None
+
+
+def _target_mode(path):
+    """Keep an existing file's mode; a new file gets the usual umask-based mode."""
+    try:
+        return os.stat(path).st_mode & 0o777
+    except OSError:
+        mask = os.umask(0)
+        os.umask(mask)
+        return 0o666 & ~mask
 
 
 def get_ws(args, env=None, **kw):
@@ -383,12 +420,17 @@ def main(argv=None, env=None, **kw):
 
 
 def _check_writable(path):
-    """Fail before any output if the CSV path cannot be written. Leaves no new file behind."""
-    existed = os.path.exists(path)
-    with open(path, "a", newline=""):
-        pass
-    if not existed:
-        os.remove(path)
+    """Fail before any output if the CSV path cannot be written. Never creates, truncates
+    or removes the target itself: an existing file is opened for append only, and the
+    directory is probed with a temporary sibling (write_csv renames one into place)."""
+    if os.path.isdir(path):
+        raise IsADirectoryError(21, "Is a directory", path)
+    if os.path.lexists(path):
+        with open(path, "a", newline=""):
+            pass
+    fd, tmp = _temp_sibling(path)
+    os.close(fd)
+    os.remove(tmp)
 
 
 def _run(args, env, **kw):
