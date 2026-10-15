@@ -323,20 +323,19 @@ def _is_special(path):
 
 def _write_to_stdout(rows, cols, raw):
     """CSV through stdout, still UTF-8 with \r\n rows whatever the console encoding:
-    a UTF-8 wrapper over stdout's byte buffer, detached afterwards so stdout stays open.
+    built in memory and written as UTF-8 bytes to stdout's byte buffer. No wrapper is
+    put around the buffer, so an error (for example a broken pipe) can never close it.
     A stdout without a byte buffer (a StringIO) gets the text as is."""
     sys.stdout.flush()  # the table goes first
+    text = io.StringIO(newline="")
+    _write_rows(text, rows, cols, raw)
     buf = getattr(sys.stdout, "buffer", None)
     if buf is None:
-        _write_rows(sys.stdout, rows, cols, raw)
+        sys.stdout.write(text.getvalue())
         sys.stdout.flush()
         return
-    w = io.TextIOWrapper(buf, encoding="utf-8", newline="", write_through=True)
-    try:
-        _write_rows(w, rows, cols, raw)
-        w.flush()
-    finally:
-        w.detach()
+    buf.write(text.getvalue().encode("utf-8"))
+    buf.flush()
 
 
 def _is_stdout(path):

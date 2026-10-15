@@ -134,3 +134,59 @@ def test_stdout_without_buffer_falls_back_to_text(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "stdout", out)
     cli._write_to_stdout([{"user": "j\u00fcrgen"}], ["user"], False)
     assert out.getvalue() == "user\r\nj\u00fcrgen\r\n"
+
+
+class _PipeBuffer:
+    """A byte buffer whose reader went away: write and flush raise EPIPE."""
+
+    closed = False
+
+    def __init__(self, fail_on):
+        self.fail_on = fail_on
+
+    def _maybe_fail(self, what):
+        if what == self.fail_on:
+            import errno
+
+            raise BrokenPipeError(errno.EPIPE, "Broken pipe")
+
+    def write(self, b):
+        self._maybe_fail("write")
+        return len(b)
+
+    def flush(self):
+        self._maybe_fail("flush")
+
+    def close(self):
+        self.closed = True
+
+    def writable(self):
+        return True
+
+    def readable(self):
+        return False
+
+    def seekable(self):
+        return False
+
+
+@pytest.mark.parametrize("fail_on", ["write", "flush"])
+def test_broken_pipe_propagates_and_leaves_stdout_buffer_open(monkeypatch, fail_on):
+    import gc
+
+    class Out:
+        def __init__(self):
+            self.buffer = _PipeBuffer(fail_on)
+
+        def write(self, s):
+            return len(s)
+
+        def flush(self):
+            pass
+
+    out = Out()
+    monkeypatch.setattr(sys, "stdout", out)
+    with pytest.raises(BrokenPipeError):
+        cli._write_to_stdout([{"user": "x"}], ["user"], False)
+    gc.collect()  # a dropped wrapper that could not detach closes the buffer here
+    assert out.buffer.closed is False
