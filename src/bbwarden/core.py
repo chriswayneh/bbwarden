@@ -317,6 +317,19 @@ def _run_steps(steps):
     return done
 
 
+def _recheck_group(ws, backend, key, group, perm):
+    """Re-read the group right before granting it: a member added since the plan must
+    not gain access through the new group grant."""
+    ws.groups[group] = list(backend.group_members(group))
+    eff = _effective(ws, key)
+    wider = sorted(m for m in ws.groups[group] if eff.get(m, 0) < rank(perm))
+    if wider:
+        raise BBWardenError(
+            f"group {group} changed since the plan: granting {perm} on repo {key} would "
+            f"widen access for {len(wider)} member(s); re-run without --apply to re-plan"
+        )
+
+
 def apply_regroup(ws, plan, backend=None):
     """Grant the group first, then drop the direct grant, so access is never lost mid-way."""
     steps = []
@@ -330,6 +343,7 @@ def apply_regroup(ws, plan, backend=None):
         def grant(key=key, g=g, perm=perm, repo=repo):
             if rank(repo["groups"].get(g)) < rank(perm):
                 if backend:
+                    _recheck_group(ws, backend, key, g, perm)
                     backend.grant_group(ws, key, g, perm)
                 repo["groups"][g] = perm
 
