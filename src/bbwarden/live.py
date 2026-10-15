@@ -384,18 +384,21 @@ def crowd_status(http, users):
     out = {}
     for u in users:
         try:
-            out[u] = bool(
-                http.get("rest/usermanagement/1/user", params={"username": u}).get(
-                    "active"
-                )
-            )
+            body = http.get("rest/usermanagement/1/user", params={"username": u})
         except BBWardenError as e:
             if isinstance(e, AuthError):
                 raise
             if "HTTP 404" in str(e):
                 out[u] = False
-            else:
-                raise
+                continue
+            raise
+        active = body.get("active") if isinstance(body, dict) else None
+        if not isinstance(active, bool):  # "false" or a missing field must not guess
+            raise BBWardenError(
+                f"Crowd returned no boolean active flag for user {u}; "
+                "refusing to guess the account status"
+            )
+        out[u] = active
     return out
 
 
