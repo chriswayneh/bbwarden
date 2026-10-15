@@ -48,13 +48,23 @@ version, and the CHANGELOG Security section describes them.
   never print their values, and they leave out response bodies.
 - **Dry run by default.** `regroup` and `offboard` only print a plan unless you pass `--apply`.
   `regroup` never picks a group whose grant would widen anyone's access. On failure, `--apply`
-  reports exactly which steps finished, failed and were not run.
+  reports exactly which steps finished, failed and were not run, also on Ctrl-C (exit 130).
+- **No silent partial results (since 0.2.4).** Malformed or cyclic pagination stops the run
+  (exit 1) instead of using a partial list. When part of the inventory cannot be loaded (for
+  example global admins without system admin rights), bbwarden prints `NOTE:` and
+  `INCOMPLETE:` on stderr and exits 3, so an `offboard` that could not see every access
+  never looks complete. `offboard` removes every direct global permission, and
+  `regroup --apply` re-reads group members before each grant. Exit codes are listed in the
+  README.
 - **Safe exports.** CSV output neutralizes spreadsheet formulas, also behind leading
   invisible characters, and escapes control and format characters like terminal output
-  (since 0.2.2). `--raw-csv` keeps them, with a warning; formulas are still neutralized.
+  (since 0.2.2). `--raw-csv` keeps them, with a warning; formulas are still neutralized and lone
+  surrogates become U+FFFD. CSV files are written atomically and an existing file is never
+  removed or truncated by the writability check (since 0.2.4).
 - **No raw tracebacks (since 0.2.2).** An unexpected error prints a traceback with exception
   types only (no messages, notes or arguments that could carry secrets) and exits 1; log
-  tracebacks are rendered the same way. Ctrl-C prints `interrupted` and exits 130; a
+  tracebacks are rendered the same way. Ctrl-C prints `interrupted` and exits 130, also
+  while bbwarden is still importing or parsing arguments (since 0.2.4); a
   non-UTF-8 `--idp-file` is a configuration error (exit 2).
 - **Escaped terminal output (since 0.2.2).** Table cells and stderr lines print control and
   format characters (C0, DEL, C1, Unicode Cc, Cf, Cs, Co, Cn, Zl, Zp) as escaped code points,

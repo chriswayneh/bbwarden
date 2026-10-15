@@ -114,7 +114,9 @@ def test_version_0_2_3_everywhere():
     assert __version__ == "0.2.3"
     assert "bbwarden 0.2.3" in (ROOT / "README.md").read_text()
     c = (ROOT / "CHANGELOG.md").read_text()
-    assert "## [0.2.3] - 2026-10-15" in c and "## [Unreleased]" not in c
+    assert (
+        "## [0.2.3] - 2026-10-15" in c
+    )  # [Unreleased] above it is checked in test_secure
     sec = (ROOT / "SECURITY.md").read_text()
     assert re.search(r"\| 0\.2\.3 \| Yes", sec) and re.search(r"\| 0\.2\.2 \| No", sec)
     road = (ROOT / "ROADMAP.md").read_text()

@@ -61,8 +61,11 @@ Plan for bbwarden by phase. Each phase ships something you can run from the comm
 - [x] https only (`--insecure` to allow http), redirects never followed, no credentials, query or fragment in `BBWARDEN_URL`/`CROWD_URL` (`v0.2.1`)
 - [x] Escaped terminal output (control and bidi characters shown as code points) and CSV formula guard that sees through invisible leading characters (`v0.2.2`)
 - [x] IDN hostnames compared as requests sends them (`v0.2.3`)
-- [ ] Known limit for `v0.2.4`: with `--raw-csv`, an escaped lone surrogate (written as `\ud800`) looks the same as a name that literally contains `\ud800`
-- [ ] Known limit for `v0.2.4`: Ctrl-C during startup or argument parsing (before `main()`'s error handling) still shows Python's own traceback
+- [x] With `--raw-csv`, lone surrogates are written as U+FFFD, so they never look like a name that literally contains `\ud800` (`v0.2.4`)
+- [x] Ctrl-C during imports or argument parsing exits 130 without a traceback; only a Ctrl-C during Python's own start-up, before bbwarden runs, cannot be caught (`v0.2.4`)
+- [x] Malformed or cyclic pagination fails loudly; a partially loaded inventory exits 3 with `INCOMPLETE:` (`v0.2.4`)
+- [x] `offboard` removes every direct global permission; `regroup --apply` re-reads group members before granting and reports manual rows (`v0.2.4`)
+- [x] Ctrl-C during `--apply` reports finished, interrupted and not-run steps; atomic CSV writes; strict IdP CSV columns and Crowd active flag (`v0.2.4`)
 - [x] `--apply` reports which steps finished, failed and were not run (`v0.2.0`)
 - [ ] Warn before removing a user's last admin path
 - [x] CSV formula injection escaped (`v0.2.0`)

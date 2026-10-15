@@ -4,6 +4,37 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- `offboard` now removes every direct global permission on Data Center (for example
+  `LICENSED_USER` or `PROJECT_CREATE`), not only admin levels, so offboarding no longer
+  leaves global access behind.
+- Pagination fails loudly with an `incomplete pagination` error (exit 1) on a page without a
+  `values` list, a Data Center page that is neither the last nor has a `nextPageStart`, or a
+  repeated cursor, instead of silently using a partial list.
+- `regroup --apply` re-reads the group's members right before each grant and stops if a
+  member added since the plan would gain access.
+- `regroup --apply` lists rows marked `manual` as `MANUAL` and exits 1 instead of printing
+  `APPLIED` and exiting 0.
+- An IdP CSV with duplicate column names (also after trimming spaces) is refused.
+- Ctrl-C during `--apply` prints which steps finished, which was interrupted and which were
+  not run, then exits 130.
+- `--csv` never removes or truncates an existing file while checking that the path is
+  writable, and writes through a temporary file renamed into place, so a failed write keeps
+  the old file.
+- Crowd status needs a real boolean `active` flag; a string, number or missing flag is an
+  error instead of a guess.
+- With `--raw-csv`, lone surrogates are written as U+FFFD, so they can no longer be confused
+  with a name that literally contains `\ud800` (ROADMAP known limit).
+- Ctrl-C while bbwarden is still importing or parsing arguments prints `interrupted` and
+  exits 130 instead of a Python traceback (ROADMAP known limit). The console script now
+  points at `bbwarden._entry:run`.
+
+### Changed
+- New exit code 3: the command finished but part of the inventory could not be loaded
+  (`NOTE:` lines plus an `INCOMPLETE:` line on stderr). Previously this exited 0.
+
 ## [0.2.3] - 2026-10-15
 
 ### Fixed

@@ -63,11 +63,15 @@ repo access, never guessed.
 
 Loading global admins needs Data Center system admin rights; loading Cloud workspace owners
 needs workspace admin rights. Without them bbwarden keeps going and prints a `NOTE:` to stderr
-saying that part was not loaded, so the result may be incomplete.
+saying that part was not loaded, followed by an `INCOMPLETE:` line, and exits with status 3
+(since 0.2.4) so scripts never mistake a partial inventory for a complete one. This also
+applies to `offboard`: a global permission bbwarden could not see is a global permission it
+cannot remove.
 
 `offboard` runs the global step last. On Data Center it is "remove all global permissions"
 (one API call that drops every global permission the user holds), and DETAIL shows the
-user's actual level, for example `SYS_ADMIN` or `ADMIN`. On Cloud, workspace owners cannot be
+user's actual level, for example `SYS_ADMIN`, `ADMIN` or `LICENSED_USER`. Every direct global
+permission is removed, not only admin levels (since 0.2.4). On Cloud, workspace owners cannot be
 removed by API: the step is recorded as MANUAL, every other removal still runs, bbwarden
 prints which steps finished and which are left to stderr, and exits with status 1. Remove the
 owner in Workspace settings. Any other failure of the global step (for example 401, 403, 5xx
@@ -100,7 +104,10 @@ Data Center repos are keyed `PROJECT/slug`; a bare slug works when it is unique.
 
 Hardening:
 
-- Every list call is paginated (Data Center `nextPageStart`, Cloud `next`).
+- Every list call is paginated (Data Center `nextPageStart`, Cloud `next`). A page without a
+  `values` list, a Data Center page that is neither the last nor has a `nextPageStart`, or a
+  repeated cursor stops the run with an `incomplete pagination` error (exit 1) instead of
+  using a partial list (since 0.2.4).
 - HTTP 429 and 503 are retried up to 5 times with exponential backoff plus jitter,
   honoring `Retry-After` (seconds or HTTP date), capped at 60 seconds per wait.
 - 401 and 403 produce a clear message naming what to fix. Errors never print
@@ -109,7 +116,10 @@ Hardening:
   same access on the repo, so replacing a direct grant never widens anyone's access. If no
   such group exists the step is marked `manual`.
 - `regroup --apply` grants the group before removing the direct grant, so access is not
-  lost if a call fails midway.
+  lost if a call fails midway. Right before each grant it re-reads the group's members and
+  stops if someone was added since the plan whose access the grant would widen (since 0.2.4).
+  Rows marked `manual` are never applied: `regroup --apply` lists them as `MANUAL` on stderr
+  and exits 1, while the dry run exits 0.
 - Pagination links pointing at a different host are refused, so credentials never leave
   your Bitbucket host. Network failures report the error type without echoing request details.
 - Unknown permission names from the API are shown as-is instead of crashing.
@@ -117,7 +127,9 @@ Hardening:
   Cloud; Data Center users missing from the admin user list). bbwarden never assumes active.
 - If an `--apply` run fails partway, bbwarden stops, prints which steps finished, which step
   failed and which were not run, logs the same to stderr, and exits non-zero. Re-run without
-  `--apply` to see the remaining plan.
+  `--apply` to see the remaining plan. Ctrl-C during `--apply` prints the same list, with the
+  interrupted step marked `INTERRUPTED` (it may or may not have reached Bitbucket), and
+  exits 130.
 - Bitbucket Cloud does not expose account status, so use `orphans --idp csv` or `--idp crowd`
   for Cloud.
 - Bitbucket Cloud users are keyed by `account_id` (shown as `nickname (account_id)`).
@@ -147,7 +159,8 @@ Hardening:
 - `offboard` loads every group the user belongs to, not only groups holding a grant.
   On Data Center, membership removal fails for groups from a read-only Crowd or LDAP
   directory; remove those in the directory itself and use `offboard --skip-memberships` to
-  remove only direct grants.
+  skip group memberships. `--skip-memberships` still removes direct repo and project grants
+  and the user's global permissions.
 - In `orphans`, IdP status is matched by user key first, then by display name. On Data Center the
   key is the username. On Cloud the key is the `account_id` and the display name is the
   nickname, so a `--idp-file` row may use either; if both appear, the account_id row wins.
@@ -169,7 +182,8 @@ formulas. The CSV file is UTF-8, and by default its cells are escaped like termi
 points, so opening it in a terminal or viewer never runs escape sequences. Use `--raw-csv`
 (any command) when you import the CSV into other tools and need the original data; it prints
 a warning on stderr, and formulas are still neutralized and lone surrogates (which UTF-8 cannot hold) are written as U+FFFD. The CSV path is checked for writability
-before anything is printed.
+before anything is printed, without creating, truncating or removing it, and the CSV is written
+to a temporary file next to it and renamed into place, so a failed write keeps the old file.
 
 Terminal output is escaped: in table cells and in `error:`, `MANUAL`, `NOTE:` and log lines,
 control and format characters (C0, DEL, C1, Unicode Cc, Cf, Cs, Co, Cn, Zl, Zp) are shown as
@@ -286,9 +300,10 @@ Tests run offline against demo data and a mocked HTTP session.
 | Code | Meaning |
 | --- | --- |
 | 0 | Success (including dry runs) |
-| 1 | Runtime error: Bitbucket or Crowd error, unknown repo or user, bad IdP file, file error, an `--apply` that stopped partway, an `offboard --apply` with MANUAL steps left, or an unexpected internal error (printed as a traceback with exception types only) |
+| 1 | Runtime error: Bitbucket or Crowd error (including incomplete pagination and a Crowd account without a boolean active flag), unknown repo or user, bad IdP file (including duplicate columns), file error, an `--apply` that stopped partway, an `--apply` with MANUAL steps left (`offboard` Cloud owners, `regroup` rows marked manual), or an unexpected internal error (printed as a traceback with exception types only) |
 | 2 | Configuration or usage error: http refused, URL that is not a valid URL, has no hostname, or contains embedded credentials, a query string or a fragment, missing variable (for example `BBWARDEN_TOKEN`, `BBWARDEN_WORKSPACE`, Crowd credentials), `--idp csv` without `--idp-file`, an `--idp-file` that is not UTF-8, or invalid arguments |
-| 130 | Interrupted (Ctrl-C) |
+| 3 | Incomplete: the command finished, but part of the inventory could not be loaded (see the `NOTE:` and `INCOMPLETE:` lines on stderr), for example global admins without system admin rights. Codes 1 and 2 take precedence |
+| 130 | Interrupted (Ctrl-C), also during start-up and argument parsing; an interrupted `--apply` first lists the steps that finished |
 
 Errors are printed to stderr as `error: ...`.
 
