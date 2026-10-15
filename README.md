@@ -1,20 +1,38 @@
 # bbwarden
 
-Least-privilege and offboarding CLI for Bitbucket (Cloud and Data Center), built on
-[atlassian-python-api](https://github.com/atlassian-api/atlassian-python-api).
+Least-privilege and offboarding CLI for Bitbucket Cloud and Data Center: shows who can touch each repo and why, finds direct grants and access held by disabled users, and plans the fixes.
 
-bbwarden answers "who can touch this repo, and why?", finds direct grants that bypass
-groups, flags access held by disabled identities, and plans (or applies) fixes. Fix
-commands are dry-run plans unless you pass `--apply`.
+[![CI](https://github.com/chriswayneh/bbwarden/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/chriswayneh/bbwarden/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](pyproject.toml)
 
-## Install
+Built on [atlassian-python-api](https://github.com/atlassian-api/atlassian-python-api). Fix commands are dry-run plans unless you pass `--apply`.
+
+## Quick start
 
 ```
+git clone https://github.com/chriswayneh/bbwarden.git
+cd bbwarden
 pip install -e .
 bbwarden --version    # bbwarden 0.2.1
+bbwarden who api --demo
 ```
 
-## Quick start (no Bitbucket needed)
+Requires Python 3.9 or newer. `--demo` uses a built-in mock workspace, so no Bitbucket server is needed.
+
+## Usage
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `who <repo or project>` | Access per person and its source (direct, group, project, global admin, public). See "What `who` covers" |
+| `direct` | Direct user grants that skip groups |
+| `orphans --idp crowd or csv` | People with access who are disabled in Crowd or an IdP CSV export (`--idp-file`, columns `user,active`), plus people the export does not list (`missing`) |
+| `regroup <repo> [--apply]` | Plan replacing direct grants with group grants |
+| `offboard <user> [--apply] [--skip-memberships]` | Plan removing a user's direct repo and project grants, group memberships, and global permissions (last) |
+
+### Demo mode
 
 Every command takes `--demo`, which uses a built-in mock workspace with a few planted
 findings, and `--csv out.csv` to save results.
@@ -27,17 +45,7 @@ bbwarden regroup api --demo
 bbwarden offboard dave --demo
 ```
 
-## Commands
-
-| Command | What it does |
-| --- | --- |
-| `who <repo or project>` | Access per person and its source (direct, group, project, global admin, public). See "What `who` covers" |
-| `direct` | Direct user grants that skip groups |
-| `orphans --idp crowd or csv` | People with access who are disabled in Crowd or an IdP CSV export (`--idp-file`, columns `user,active`), plus people the export does not list (`missing`) |
-| `regroup <repo> [--apply]` | Plan replacing direct grants with group grants |
-| `offboard <user> [--apply] [--skip-memberships]` | Plan removing a user's direct repo and project grants, group memberships, and global permissions (last) |
-
-## What `who` covers
+### What `who` covers
 
 `who` reports access from:
 
@@ -66,7 +74,14 @@ owner in Workspace settings. Any other failure of the global step (for example 4
 or a network error on Data Center) is a normal partial failure. If an earlier step fails, the
 global step is listed as "not run".
 
-## Live use
+### Live mode
+
+```
+export BBWARDEN_URL=https://bitbucket.example.com
+export BBWARDEN_USER=<username>
+export BBWARDEN_TOKEN=<token>
+bbwarden direct
+```
 
 Set credentials in the environment (never on the command line):
 
@@ -151,7 +166,7 @@ are reported as `missing`, so a partial export cannot look clean.
 spreadsheets do not run them as formulas. The CSV path is checked for writability before
 anything is printed.
 
-## Sample output
+### Sample output
 
 Real output from the demo workspace:
 
@@ -218,6 +233,32 @@ project  CORE  remove direct grant  WRITE
 DRY RUN: re-run with --apply to make these changes
 ```
 
+## Architecture
+
+`cli.py` builds a `Workspace` (from `model.py`) either from the built-in demo data or from a live backend in `live.py`: `DataCenter` or `CloudBackend`, both on atlassian-python-api sessions wrapped by `http.py` (pagination, retries, redirect refusal, safe errors). `core.py` computes effective access, direct grants, orphaned access and fix plans from that workspace. `cli.py` prints the result as a table and optionally writes CSV. With `--apply`, `core.py` runs the plan through the same backend, so changes go to the demo workspace or to Bitbucket.
+
+```mermaid
+flowchart LR
+    user["Shell"] --> cli["cli.py<br/>commands, table and CSV output"]
+    cli -->|"--demo"| demo["model.py demo_workspace<br/>mock workspace"]
+    cli -->|"live mode"| live["live.py<br/>DataCenter, CloudBackend"]
+    live --> http["http.py<br/>paging, retries, no redirects, safe errors"]
+    http --> bb["Bitbucket Data Center or Cloud"]
+    http --> crowd["Crowd (orphans --idp crowd)"]
+    demo --> ws["model.py Workspace"]
+    live --> ws
+    ws --> core["core.py<br/>who, direct, orphans, regroup, offboard"]
+    idp["IdP CSV export"] --> core
+    core -->|"--apply"| live
+    core --> cli
+    cli --> stdout["Terminal table"]
+    cli --> csv["CSV file"]
+```
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md). v0.2.0 shipped the live Cloud, Crowd and `--apply` work and most of the hardening; v0.2.1 added https only, no redirects, no credentials in URLs and documented exit codes. Next up is finishing Phase 2, then Phase 3: JSON output and CI-friendly exit-on-findings.
+
 ## Development
 
 ```
@@ -247,4 +288,4 @@ versions and the security design.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
