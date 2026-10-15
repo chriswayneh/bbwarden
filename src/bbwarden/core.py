@@ -334,6 +334,10 @@ def apply_regroup(ws, plan, backend=None):
     """Grant the group first, then drop the direct grant, so access is never lost mid-way."""
     steps = []
     for step in plan:
+        if step["action"] == "manual":  # never applied: report it so the run exits 1
+            ws.manual.append(
+                (f"replace direct {step['user']} on repo {step['repo']}", step["detail"])
+            )
         if step["action"] != "replace":
             continue
         key, u, g = step["repo"], step["key"], step["group"]
