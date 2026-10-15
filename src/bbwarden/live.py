@@ -10,8 +10,6 @@ DC_PERM = {"REPO_READ": "READ", "REPO_WRITE": "WRITE", "REPO_ADMIN": "ADMIN",
 CLOUD_PERM = {"read": "READ", "write": "WRITE", "admin": "ADMIN", "create-repo": "WRITE"}
 
 
-__all__ = ["ManualStep"]  # re-exported for callers
-
 GLOBAL_ADMIN = ("ADMIN", "SYS_ADMIN")   # Data Center global permissions that imply repo admin
 
 
@@ -191,7 +189,7 @@ class CloudBackend:
 
     def remove_global(self, user):
         raise ManualStep("Bitbucket Cloud has no API to remove a workspace owner; "
-                            "remove them in Workspace settings, then re-run")
+                         "remove them in Workspace settings, then re-run")
 
     def remove_user(self, ws, scope, key, user):
         self._uuid(user)   # fail on unknown users instead of guessing

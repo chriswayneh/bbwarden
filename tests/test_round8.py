@@ -2,7 +2,7 @@
 import pytest
 
 from bbwarden import cli, core, live
-from bbwarden.http import AuthError, BBWardenError
+from bbwarden.http import AuthError, BBWardenError, ManualStep
 from bbwarden.model import demo_workspace
 
 
@@ -55,7 +55,7 @@ def test_cli_partial_failure_prints_global_not_run(monkeypatch, capsys):
 
 
 def test_cloud_remove_global_raises_manualstep():
-    with pytest.raises(getattr(live, "ManualStep", ZeroDivisionError)):
+    with pytest.raises(ManualStep):
         live.CloudBackend(None, "acme").remove_global("x")
 
 
