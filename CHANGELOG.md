@@ -26,11 +26,13 @@ All notable changes to bbwarden are listed here. The format follows
   and `max_redirects=0` on the sessions). A 3xx response, or a response that was redirected
   anyway, is an error (`redirect refused: <status> to <host>`) naming only the status and
   the target host.
-- `BBWARDEN_URL` and `CROWD_URL` with embedded credentials (`https://user:pass@host`) are
-  refused as a configuration error (exit 2) without echoing them.
+- `BBWARDEN_URL` and `CROWD_URL` with embedded credentials (`https://user:pass@host`), a query
+  string or a fragment are refused as a configuration error (exit 2) without echoing them.
 - URLs in error messages keep only scheme, host, port and path; userinfo, query strings and
   fragments are dropped (IPv6 hosts handled). Previously userinfo could appear in redirect,
   network and 401/403 messages.
+- A failed `--apply` step that raises an unexpected (non-bbwarden) exception is reported
+  and logged by exception type only, since its message could carry secrets.
 
 ### Deprecated
 - `CROWD_PASSWORD`: still accepted, with a deprecation warning on stderr when it is used. If

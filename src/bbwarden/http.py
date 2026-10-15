@@ -56,6 +56,8 @@ def _safe_url(url):
         port = u.port
     except ValueError:
         return "<invalid URL>"
+    if u.scheme and not u.netloc:  # 'https:u:p@h' would otherwise echo its path
+        return "<invalid URL>"
     if ":" in host:
         host = f"[{host}]"
     netloc = f"{host}:{port}" if port is not None else host

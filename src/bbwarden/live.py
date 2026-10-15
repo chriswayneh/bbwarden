@@ -62,6 +62,8 @@ def require_https(name, url, insecure):
             else ("CROWD_APP and CROWD_APP_PASSWORD")
         )
         raise ConfigError(f"{name} must not contain credentials; use {hint} instead")
+    if u.query or u.fragment or "?" in url or "#" in url:
+        raise ConfigError(f"{name} must not contain a query string or fragment")
     scheme = u.scheme.lower()
     if scheme in ("http", "https") and not u.hostname:
         raise ConfigError(

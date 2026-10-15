@@ -4,7 +4,7 @@ import csv
 import logging
 from typing import Any
 
-from .http import ManualStep
+from .http import BBWardenError, ManualStep
 from .model import RANK, rank
 
 log = logging.getLogger("bbwarden")
@@ -48,11 +48,17 @@ def resolve_user(ws, name):
     return hits[0]
 
 
+def describe_error(e):
+    """Message for logs and the partial-apply report. Our own errors are written to be safe to
+    show; for anything else only the type is shown, since str(e) could carry secrets."""
+    return str(e) if isinstance(e, BBWardenError) else type(e).__name__
+
+
 class PartialApply(Exception):
     """An --apply run failed partway. Carries the steps that finished and the failed step."""
 
     def __init__(self, done, failed, error, pending=()):
-        super().__init__(str(error))
+        super().__init__(describe_error(error))
         self.done, self.failed, self.error, self.pending = (
             done,
             failed,
@@ -298,7 +304,10 @@ def _run_steps(steps):
             fn()
         except Exception as e:
             log.error(
-                "apply failed at step %r after %d finished: %s", label, len(done), e
+                "apply failed at step %r after %d finished: %s",
+                label,
+                len(done),
+                describe_error(e),
             )
             for d in done:
                 log.error("finished: %s", d)
@@ -418,7 +427,10 @@ def apply_offboard(ws, user, plan, backend=None):
             continue
         except Exception as e:
             log.error(
-                "apply failed at step %r after %d finished: %s", lab(s), len(done), e
+                "apply failed at step %r after %d finished: %s",
+                lab(s),
+                len(done),
+                describe_error(e),
             )
             raise PartialApply(
                 done, lab(s), e, [lab(x) for x in globals_[i + 1 :]]

@@ -125,7 +125,7 @@ def main(argv=None, env=None, **kw):
             "Re-run the same command (without --apply first) to see what is left.",
             file=sys.stderr,
         )
-        sys.exit(f"error: {e.error}")
+        sys.exit(f"error: {core.describe_error(e.error)}")
     except (BBWardenError, core.BadIdpFile) as e:
         sys.exit(f"error: {e}")
     except OSError as e:

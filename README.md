@@ -114,8 +114,8 @@ Hardening:
   `--insecure` allows `http://` for a local test server and prints a warning on stderr.
   There is no automatic localhost exception, so plain http is always an explicit choice.
   A URL without a hostname (`https://`, `https:x`) is refused.
-- A `BBWARDEN_URL` or `CROWD_URL` with embedded credentials (`https://user:pass@host`) is
-  refused with exit code 2; put them in `BBWARDEN_USER`/`BBWARDEN_TOKEN` or
+- A `BBWARDEN_URL` or `CROWD_URL` with embedded credentials (`https://user:pass@host`), a query
+  string or a fragment is refused with exit code 2; put them in `BBWARDEN_USER`/`BBWARDEN_TOKEN` or
   `CROWD_APP`/`CROWD_APP_PASSWORD`. Messages show URLs as scheme, host, port and path only:
   userinfo, query strings and fragments are always dropped.
 - Redirects are never followed. A 3xx response stops the run with
