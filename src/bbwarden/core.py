@@ -2,7 +2,7 @@
 import csv
 import logging
 
-from .http import BBWardenError
+from .http import ManualStep
 from .model import RANK, rank
 
 log = logging.getLogger("bbwarden")
@@ -290,13 +290,21 @@ def apply_offboard(ws, user, plan, backend=None):
 
     lab = lambda s: f"{s['action']} {label(ws, user)}: {s['scope']} {s['name']}"
     regular = [s for s in plan if s["scope"] != "global"]
-    done = _run_steps([(lab(s), lambda s=s: do(s)) for s in regular])
-    for s in plan:
-        if s["scope"] == "global":
-            try:
-                do(s)
-                done.append(lab(s))
-            except BBWardenError as e:   # e.g. Cloud owner: no removal API; keep what finished
-                log.warning("manual step needed: %s: %s", lab(s), e)
-                ws.manual.append((lab(s), str(e)))
+    globals_ = [s for s in plan if s["scope"] == "global"]
+    try:
+        done = _run_steps([(lab(s), lambda s=s: do(s)) for s in regular])
+    except PartialApply as e:
+        e.pending.extend(lab(s) for s in globals_)   # global steps never ran either
+        raise
+    for i, s in enumerate(globals_):
+        try:
+            do(s)
+        except ManualStep as e:   # no removal API (Cloud owner): keep what finished
+            log.warning("manual step needed: %s: %s", lab(s), e)
+            ws.manual.append((lab(s), str(e)))
+            continue
+        except Exception as e:
+            log.error("apply failed at step %r after %d finished: %s", lab(s), len(done), e)
+            raise PartialApply(done, lab(s), e, [lab(x) for x in globals_[i + 1:]]) from e
+        done.append(lab(s))
     return done

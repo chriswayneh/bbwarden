@@ -2,13 +2,15 @@
 import os
 from urllib.parse import urlsplit
 
-from .http import AuthError, BBWardenError, Http
+from .http import AuthError, BBWardenError, Http, ManualStep
 from .model import Workspace
 
 DC_PERM = {"REPO_READ": "READ", "REPO_WRITE": "WRITE", "REPO_ADMIN": "ADMIN",
            "PROJECT_READ": "READ", "PROJECT_WRITE": "WRITE", "PROJECT_ADMIN": "ADMIN"}
 CLOUD_PERM = {"read": "READ", "write": "WRITE", "admin": "ADMIN", "create-repo": "WRITE"}
 
+
+__all__ = ["ManualStep"]  # re-exported for callers
 
 GLOBAL_ADMIN = ("ADMIN", "SYS_ADMIN")   # Data Center global permissions that imply repo admin
 
@@ -188,7 +190,7 @@ class CloudBackend:
             ws.users.setdefault(k, {"active": None})["name"] = n
 
     def remove_global(self, user):
-        raise BBWardenError("Bitbucket Cloud has no API to remove a workspace owner; "
+        raise ManualStep("Bitbucket Cloud has no API to remove a workspace owner; "
                             "remove them in Workspace settings, then re-run")
 
     def remove_user(self, ws, scope, key, user):

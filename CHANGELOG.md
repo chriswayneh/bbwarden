@@ -23,7 +23,9 @@ All notable changes to bbwarden are listed here. The format follows
   produce a `NOTE:` on stderr. `offboard` removes global permissions as its last step
   ("remove all global permissions" on Data Center, showing the actual level in DETAIL).
   If that step cannot be done by API (Cloud workspace owners), it is recorded as a manual
-  step, other removals are kept, and bbwarden exits with status 1.
+  step, other removals are kept, the summary goes to stderr, and bbwarden exits with status 1.
+  Other errors on that step are normal partial failures, and the step is listed as "not run"
+  when an earlier step fails.
 - `orphans` reports people with access who are missing from the IdP export.
 
 ### Changed

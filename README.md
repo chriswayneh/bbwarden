@@ -61,8 +61,10 @@ saying that part was not loaded, so the result may be incomplete.
 (one API call that drops every global permission the user holds), and DETAIL shows the
 user's actual level, for example `SYS_ADMIN` or `ADMIN`. On Cloud, workspace owners cannot be
 removed by API: the step is recorded as MANUAL, every other removal still runs, bbwarden
-prints which steps finished and which are left, and exits with status 1. Remove the owner in
-Workspace settings.
+prints which steps finished and which are left to stderr, and exits with status 1. Remove the
+owner in Workspace settings. Any other failure of the global step (for example 401, 403, 5xx
+or a network error on Data Center) is a normal partial failure. If an earlier step fails, the
+global step is listed as "not run".
 
 ## Live use
 

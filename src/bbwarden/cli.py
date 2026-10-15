@@ -157,9 +157,9 @@ def _run(args, env, **kw):
     if ws.manual:
         total = len(rows)
         print(f"\nAPPLY INCOMPLETE: {total - len(ws.manual)} of {total} steps finished. "
-              "MANUAL steps left:")
+              "MANUAL steps left:", file=sys.stderr)
         for lab, why in ws.manual:
-            print(f"  MANUAL  {lab}: {why}")
+            print(f"  MANUAL  {lab}: {why}", file=sys.stderr)
         note = ""
     if note:
         print(f"\n{note}")

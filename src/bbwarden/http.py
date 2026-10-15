@@ -15,6 +15,10 @@ class BBWardenError(Exception):
         self.status = status
 
 
+class ManualStep(BBWardenError):
+    """The step cannot be done by API and must be done by hand (e.g. Cloud workspace owner)."""
+
+
 class AuthError(BBWardenError):
     pass
 

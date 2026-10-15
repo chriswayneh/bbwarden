@@ -2,7 +2,7 @@
 import pytest
 
 from bbwarden import cli, core
-from bbwarden.http import BBWardenError
+from bbwarden.http import ManualStep
 from bbwarden.model import demo_workspace
 
 
@@ -13,7 +13,7 @@ class Backend:
     def remove_global(self, user):
         self.calls.append(("global", user))
         if self.fail_global:
-            raise BBWardenError("Bitbucket Cloud has no API to remove a workspace owner")
+            raise ManualStep("Bitbucket Cloud has no API to remove a workspace owner")
 
     def remove_user(self, ws, scope, key, user):
         self.calls.append((scope, key))
@@ -42,7 +42,7 @@ def test_global_failure_becomes_manual(monkeypatch, capsys):
     ws, be = ws_root_everywhere(), Backend(fail_global=True)
     monkeypatch.setattr("bbwarden.cli.get_ws", lambda args, env=None, **kw: (ws, be))
     rc = cli.main(["offboard", "root", "--apply"])
-    out = capsys.readouterr().out
+    out = capsys.readouterr().err
     assert rc == 1
     assert be.calls == [("repo", "api"), ("group", "ops"), ("global", "root")]
     assert "root" not in ws.repos["api"]["users"] and "root" not in ws.groups["ops"]
