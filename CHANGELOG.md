@@ -4,6 +4,14 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- IDN hosts (for example `BBWARDEN_URL=https://bücher.example`) are no longer refused as
+  cross-host: the origin check compares IDNA-encoded (punycode), lowercased hostnames, so
+  the punycoded final URL that requests reports matches. A hostname that cannot be
+  IDNA-encoded is never treated as the same origin, so it is still refused.
+
 ## [0.2.2] - 2026-10-15
 
 ### Security

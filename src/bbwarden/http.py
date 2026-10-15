@@ -67,13 +67,28 @@ def _safe_url(url):
 IDEMPOTENT = ("GET", "HEAD", "OPTIONS", "PUT", "DELETE")
 
 
+def _idna_host(host):
+    """Hostname in ASCII (IDNA, lowercase), so https://bücher.example and the punycoded
+    https://xn--bcher-kva.example that requests reports compare equal. IPv6 literals pass
+    through lowercased. A name that cannot be IDNA-encoded (for example an empty or
+    over-long label) returns a fresh object() that equals nothing, so it is never treated
+    as the same origin."""
+    host = host.lower()
+    if not host or ":" in host:
+        return host
+    try:
+        return host.encode("idna").decode("ascii").lower()
+    except UnicodeError:
+        return object()
+
+
 def _origin(url):
-    """(scheme, hostname, port) with default ports filled in."""
+    """(scheme, IDNA hostname, port) with default ports filled in."""
     u = urlsplit(url)
     scheme = u.scheme.lower()
     return (
         scheme,
-        (u.hostname or "").lower(),
+        _idna_host(u.hostname or ""),
         u.port or {"https": 443, "http": 80}.get(scheme),
     )
 
