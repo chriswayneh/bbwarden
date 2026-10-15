@@ -42,3 +42,4 @@ def test_hostless_urls_never_same_origin():
 
     assert _origin("file:///x") != _origin("file:///x")
     assert _origin("file:///x") != _origin("file:///y")
+    assert _origin("https:///x") != _origin("https:///x")
