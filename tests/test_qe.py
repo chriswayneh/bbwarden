@@ -160,6 +160,9 @@ class FlakyBackend:
     def grant_group(self, ws, key, group, perm):
         self._call("grant_group", key, group, perm)
 
+    def group_members(self, group):  # demo membership; not counted in fail_on
+        return list(demo_workspace().groups.get(group, []))
+
 
 def test_partial_apply_reports_finished_steps(monkeypatch, capsys, caplog):
     ws = demo_workspace()

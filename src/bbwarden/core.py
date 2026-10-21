@@ -358,8 +358,26 @@ def apply_regroup(ws, plan, backend=None):
                     backend.grant_group(ws, key, g, perm)
                 repo["groups"][g] = perm
 
-        def remove(key=key, u=u, repo=repo):
+        def remove(key=key, u=u, g=g, repo=repo, who=step["user"]):
             if backend:
+                # Re-check right before dropping the direct grant: if the user left the
+                # group (or the lookup fails), removing it would cut their access.
+                try:
+                    still = u in backend.group_members(g)
+                    why = f"not a member of group {g} any more"
+                except Exception as e:  # noqa: BLE001 - any lookup failure: keep access
+                    still, why = (
+                        False,
+                        f"membership of group {g} unknown ({describe_error(e)})",
+                    )
+                if not still:
+                    ws.manual.append(
+                        (
+                            f"remove direct {who} from repo {key}",
+                            f"skipped: {why}; direct grant kept",
+                        )
+                    )
+                    return
                 backend.remove_user(ws, "repo", key, u)
             del repo["users"][u]
 
