@@ -127,7 +127,11 @@ def test_version_0_2_5_everywhere():
     assert "bbwarden 0.2.5" in (ROOT / "README.md").read_text()
     c = (ROOT / "CHANGELOG.md").read_text()
     assert "## [0.2.5] - 2026-10-22" in c  # [Unreleased] may sit above it
-    assert c.index("## [0.2.5]") < c.index("## [0.2.4] - 2026-10-15") < c.index("## [0.2.3]")
+    assert (
+        c.index("## [0.2.5]")
+        < c.index("## [0.2.4] - 2026-10-15")
+        < c.index("## [0.2.3]")
+    )
     sec = (ROOT / "SECURITY.md").read_text()
     rows = re.findall(r"^\| (0\.[0-9.x]+) \| (.*) \|$", sec, re.MULTILINE)
     assert rows[0][0] == "0.2.5" and rows[0][1].startswith("Yes")
