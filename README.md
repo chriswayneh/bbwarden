@@ -1,10 +1,10 @@
 # bbwarden
 
-Least-privilege and offboarding CLI for Bitbucket Cloud and Data Center: shows who can touch each repo and why, finds direct grants and access held by disabled users, and plans the fixes.
-
 [![CI](https://github.com/chriswayneh/bbwarden/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/chriswayneh/bbwarden/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](pyproject.toml)
+
+Least-privilege and offboarding CLI for Bitbucket Cloud and Data Center: shows who can touch each repo and why, finds direct grants and access held by disabled users, and plans the fixes.
 
 Built on [atlassian-python-api](https://github.com/atlassian-api/atlassian-python-api). Fix commands are dry-run plans unless you pass `--apply`.
 
@@ -19,6 +19,27 @@ bbwarden who api --demo
 ```
 
 Requires Python 3.9 or newer. `--demo` uses a built-in mock workspace, so no Bitbucket server is needed.
+
+### Development
+```
+pip install -e ".[dev]"
+ruff format --check .
+ruff check .
+mypy src
+pytest -q
+```
+
+Tests run offline against demo data and a mocked HTTP session.
+
+## Features
+
+- **Who has access:** `who` shows each person's access to a repo or project and where it comes from (direct, group, project, global admin or public).
+- **Direct grants:** `direct` lists user grants that skip groups.
+- **Orphaned access:** `orphans` finds people with access who are disabled in Crowd or an IdP CSV export, or missing from it.
+- **Regroup plans:** `regroup` plans replacing direct grants with group grants.
+- **Offboarding:** `offboard` plans removing a user's direct grants, group memberships and global permissions.
+- **Dry run by default:** fix commands only plan unless you pass `--apply`.
+- **Demo mode:** `--demo` uses a built-in mock workspace, so no Bitbucket server is needed.
 
 ## Usage
 
@@ -263,6 +284,18 @@ project  CORE  remove direct grant  WRITE
 DRY RUN: re-run with --apply to make these changes
 ```
 
+### Exit codes
+| Code | Meaning |
+| --- | --- |
+| 0 | Success (including dry runs) |
+| 1 | Runtime error: Bitbucket or Crowd error (including incomplete pagination and a Crowd account without a boolean active flag), unknown repo or user, bad IdP file (including duplicate columns), file error, an `--apply` that stopped partway, an `--apply` with MANUAL steps left (`offboard` Cloud owners, `regroup` rows marked manual), an unwritable stdout (for example `> /dev/full`, reported as `error: cannot write to stdout`), or an unexpected internal error (printed as a traceback with exception types only) |
+| 2 | Configuration or usage error: http refused, URL that is not a valid URL, has no hostname, or contains embedded credentials, a query string or a fragment, missing variable (for example `BBWARDEN_TOKEN`, `BBWARDEN_WORKSPACE`, Crowd credentials), `--idp csv` without `--idp-file`, an `--idp-file` that is not UTF-8, or invalid arguments |
+| 3 | Incomplete: the command finished, but part of the inventory could not be loaded (see the `NOTE:` and `INCOMPLETE:` lines on stderr), for example global admins without system admin rights. Codes 1 and 2 take precedence |
+| 130 | Interrupted (Ctrl-C), also during start-up and argument parsing; an interrupted `--apply` first lists the steps that finished |
+| 141 | stdout was closed by its reader (for example `bbwarden ... \| head`), also when the reader of a FIFO or `/dev/stdout` CSV leaves: stdout output stops quietly, without a traceback, while stderr reports and the CSV still go out (128 + SIGPIPE, the shell convention). Also for `--help` and `--version`. Codes 1, 2 and 3 take precedence. With stdout closed (`>&-`), stdout output is silently skipped and the run exits 0 (the CSV is still written). An unwritable stderr (`2>/dev/full`) keeps the real exit code. POSIX behaviour; on Windows best effort |
+
+Errors are printed to stderr as `error: ...`.
+
 ## Architecture
 
 `cli.py` builds a `Workspace` (from `model.py`) either from the built-in demo data or from a live backend in `live.py`: `DataCenter` or `CloudBackend`, both on atlassian-python-api sessions wrapped by `http.py` (pagination, retries, redirect refusal, safe errors). `core.py` computes effective access, direct grants, orphaned access and fix plans from that workspace. `cli.py` prints the result as a table and optionally writes CSV. With `--apply`, `core.py` runs the plan through the same backend, so changes go to the demo workspace or to Bitbucket.
@@ -285,40 +318,38 @@ flowchart LR
     cli --> csv["CSV file"]
 ```
 
+## Built with
+
+**Languages** (GitHub language stats, checked 2026-10-21): Python 100%
+
+**AI tools:**
+
+- Grok Bot (confirmed by Chris, 2026-10-21)
+- Cursor cloud agents (confirmed by Chris, 2026-10-21)
+
+Commits made with AI help carry a `Co-authored-by` trailer from now on. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned phases and [CHANGELOG.md](CHANGELOG.md) for released versions.
 
 See [ROADMAP.md](ROADMAP.md). v0.2.0 shipped the live Cloud, Crowd and `--apply` work and most of the hardening; v0.2.1 added https only, no redirects, no credentials in URLs and documented exit codes; v0.2.2 added escaped terminal and CSV output; v0.2.3 fixed IDN hostnames; v0.2.4 made offboarding remove every global permission, failed loudly on incomplete pagination or inventory (exit 3) and fixed the review findings. Next up is finishing Phase 2, then Phase 3: JSON output and CI-friendly exit-on-findings.
 
-## Development
-
-```
-pip install -e ".[dev]"
-ruff format --check .
-ruff check .
-mypy src
-pytest -q
-```
-
-Tests run offline against demo data and a mocked HTTP session.
-
-## Exit codes
-
-| Code | Meaning |
-| --- | --- |
-| 0 | Success (including dry runs) |
-| 1 | Runtime error: Bitbucket or Crowd error (including incomplete pagination and a Crowd account without a boolean active flag), unknown repo or user, bad IdP file (including duplicate columns), file error, an `--apply` that stopped partway, an `--apply` with MANUAL steps left (`offboard` Cloud owners, `regroup` rows marked manual), an unwritable stdout (for example `> /dev/full`, reported as `error: cannot write to stdout`), or an unexpected internal error (printed as a traceback with exception types only) |
-| 2 | Configuration or usage error: http refused, URL that is not a valid URL, has no hostname, or contains embedded credentials, a query string or a fragment, missing variable (for example `BBWARDEN_TOKEN`, `BBWARDEN_WORKSPACE`, Crowd credentials), `--idp csv` without `--idp-file`, an `--idp-file` that is not UTF-8, or invalid arguments |
-| 3 | Incomplete: the command finished, but part of the inventory could not be loaded (see the `NOTE:` and `INCOMPLETE:` lines on stderr), for example global admins without system admin rights. Codes 1 and 2 take precedence |
-| 130 | Interrupted (Ctrl-C), also during start-up and argument parsing; an interrupted `--apply` first lists the steps that finished |
-| 141 | stdout was closed by its reader (for example `bbwarden ... \| head`), also when the reader of a FIFO or `/dev/stdout` CSV leaves: stdout output stops quietly, without a traceback, while stderr reports and the CSV still go out (128 + SIGPIPE, the shell convention). Also for `--help` and `--version`. Codes 1, 2 and 3 take precedence. With stdout closed (`>&-`), stdout output is silently skipped and the run exits 0 (the CSV is still written). An unwritable stderr (`2>/dev/full`) keeps the real exit code. POSIX behaviour; on Windows best effort |
-
-Errors are printed to stderr as `error: ...`.
-
 ## Security
+
+See [SECURITY.md](SECURITY.md) for supported versions and how to report a vulnerability privately.
 
 See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately, supported
 versions and the security design.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), including how to credit AI tools in commits.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Acknowledgments
+
+README layout adapted from [Best-README-Template](https://github.com/othneildrew/Best-README-Template) by Othneil Drew.
