@@ -20,11 +20,12 @@ version, and the CHANGELOG Security section describes them.
 
 | Version | Supported |
 | --- | --- |
-| 0.2.4 | Yes (https only, redirects refused, terminal output escaped, IDN-safe origin check, complete offboarding, no silent partial results) |
-| 0.2.3 | No: upgrade to 0.2.4 (offboard left non-admin global permissions; partial pagination went unnoticed) |
-| 0.2.2 | No: upgrade to 0.2.4 (IDN hosts refused, plus the 0.2.3 issues) |
-| 0.2.1 | No: upgrade to 0.2.4 (names with control characters reached the terminal raw) |
-| 0.2.0 | No: upgrade to 0.2.4 (it allowed http:// to localhost and followed redirects) |
+| 0.2.5 | Yes (https only, redirects refused, terminal output escaped, IDN-safe origin check, complete offboarding, no silent partial results, regroup keeps a direct grant unless group membership is confirmed) |
+| 0.2.4 | No: upgrade to 0.2.5 (regroup could remove a direct grant from a user no longer in the replacement group) |
+| 0.2.3 | No: upgrade to 0.2.5 (offboard left non-admin global permissions; partial pagination went unnoticed) |
+| 0.2.2 | No: upgrade to 0.2.5 (IDN hosts refused, plus the 0.2.3 issues) |
+| 0.2.1 | No: upgrade to 0.2.5 (names with control characters reached the terminal raw) |
+| 0.2.0 | No: upgrade to 0.2.5 (it allowed http:// to localhost and followed redirects) |
 | 0.1.x | No (demo only, no live hardening) |
 
 ## Security design notes
