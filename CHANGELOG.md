@@ -4,6 +4,13 @@ All notable changes to bbwarden are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- `regroup --apply` re-checks that the user is still in the replacement group right before
+  removing their direct grant; if not, or if the lookup fails, the grant is kept and the
+  step is reported as MANUAL (exit 1).
+
 ## [0.2.4] - 2026-10-15
 
 ### Fixed

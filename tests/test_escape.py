@@ -126,7 +126,7 @@ def test_version_0_2_4_everywhere():
     assert __version__ == "0.2.4"
     assert "bbwarden 0.2.4" in (ROOT / "README.md").read_text()
     c = (ROOT / "CHANGELOG.md").read_text()
-    assert "## [0.2.4] - 2026-10-15" in c and "## [Unreleased]" not in c
+    assert "## [0.2.4] - 2026-10-15" in c  # [Unreleased] may sit above it
     assert c.index("## [0.2.4]") < c.index("## [0.2.3]")
     sec = (ROOT / "SECURITY.md").read_text()
     rows = re.findall(r"^\| (0\.[0-9.x]+) \| (.*) \|$", sec, re.MULTILINE)
