@@ -14,7 +14,7 @@ Built on [atlassian-python-api](https://github.com/atlassian-api/atlassian-pytho
 git clone https://github.com/chriswayneh/bbwarden.git
 cd bbwarden
 pip install -e .
-bbwarden --version    # bbwarden 0.2.4
+bbwarden --version    # bbwarden 0.2.5
 bbwarden who api --demo
 ```
 
@@ -333,7 +333,7 @@ Commits made with AI help carry a `Co-authored-by` trailer from now on. See [CON
 
 See [ROADMAP.md](ROADMAP.md) for planned phases and [CHANGELOG.md](CHANGELOG.md) for released versions.
 
-See [ROADMAP.md](ROADMAP.md). v0.2.0 shipped the live Cloud, Crowd and `--apply` work and most of the hardening; v0.2.1 added https only, no redirects, no credentials in URLs and documented exit codes; v0.2.2 added escaped terminal and CSV output; v0.2.3 fixed IDN hostnames; v0.2.4 made offboarding remove every global permission, failed loudly on incomplete pagination or inventory (exit 3) and fixed the review findings. Next up is finishing Phase 2, then Phase 3: JSON output and CI-friendly exit-on-findings.
+See [ROADMAP.md](ROADMAP.md). v0.2.0 shipped the live Cloud, Crowd and `--apply` work and most of the hardening; v0.2.1 added https only, no redirects, no credentials in URLs and documented exit codes; v0.2.2 added escaped terminal and CSV output; v0.2.3 fixed IDN hostnames; v0.2.4 made offboarding remove every global permission, failed loudly on incomplete pagination or inventory (exit 3) and fixed the review findings; v0.2.5 made `regroup --apply` keep a direct grant unless the user is still in the replacement group. Next up is finishing Phase 2, then Phase 3: JSON output and CI-friendly exit-on-findings.
 
 ## Security
 
