@@ -8,6 +8,12 @@ Least-privilege and offboarding CLI for Bitbucket Cloud and Data Center: shows w
 
 Built on [atlassian-python-api](https://github.com/atlassian-api/atlassian-python-api). Fix commands are dry-run plans unless you pass `--apply`.
 
+## Demo
+
+<p align="center"><img src="docs/assets/demo.gif" alt="bbwarden v0.2.5 demo: who/direct/orphans against the built-in mock Bitbucket workspace" width="100%"></p>
+
+The GIF replays real v0.2.5 output using only `--demo` mock data (no Bitbucket or Crowd account). [Run the demo](docs/demo.md).
+
 ## Quick start
 
 ```
